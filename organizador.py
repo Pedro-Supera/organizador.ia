@@ -74,7 +74,7 @@ def extrair_texto(caminho: Path) -> str:
     return extrator(caminho) if extrator else ""
 
 
-def gerar_resumo(texto: str, nome_arquivo: str, model: str = "llama-3.3-70b-versatile", client=None) -> str:
+def gerar_resumo(texto: str, nome_arquivo: str, model: str = "qwen/qwen3.6-27b", client=None) -> str:
     if not texto or len(texto) < 50:
         return "Texto muito curto ou vazio para gerar resumo."
 
@@ -134,7 +134,7 @@ def salvar_resumo(pasta_resumos: Path, nome_arquivo: str, resumo: str) -> None:
 
 
 def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = False,
-                   model: str = "llama-3.3-70b-versatile", max_files: int | None = None) -> None:
+                   model: str = "qwen/qwen3.6-27b", max_files: int | None = None) -> None:
     pasta = Path(caminho_pasta).expanduser().resolve()
     if not pasta.is_dir():
         raise ValueError(f"A pasta '{pasta}' não existe ou não é um diretório.")
@@ -215,7 +215,7 @@ def construir_parser() -> argparse.ArgumentParser:
     parser.add_argument("caminho", help="Pasta que será organizada")
     parser.add_argument("-d", "--dry-run", action="store_true", help="Simula a operação sem alterar arquivos")
     parser.add_argument("--no-ai", action="store_true", help="Desativa a geração de resumos com IA")
-    parser.add_argument("--model", default="llama-3.3-70b-versatile", help="Modelo da Groq usado nos resumos")
+    parser.add_argument("--model", default="qwen/qwen3.6-27b", help="Modelo da Groq usado nos resumos")
     parser.add_argument("--max-files", type=int, help="Limita a quantidade de arquivos processados")
     return parser
 
