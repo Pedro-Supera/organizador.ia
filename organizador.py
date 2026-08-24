@@ -2,7 +2,9 @@
 """Núcleo de organização de arquivos e geração opcional de resumos."""
 
 import argparse
+import csv
 import os
+import random
 import shutil
 import sys
 import threading
@@ -11,7 +13,8 @@ from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, TypedDict
+from html.parser import HTMLParser
 
 from dotenv import load_dotenv
 from groq import APIConnectionError, APIStatusError, Groq, RateLimitError
@@ -32,6 +35,16 @@ CATEGORIAS = {
     "planilhas": [".xls", ".xlsx", ".csv", ".ods"],
     "compactados": [".zip", ".rar", ".7z", ".tar", ".gz"],
 }
+
+
+class Estatisticas(TypedDict):
+    """Resumo dos resultados de uma operação."""
+
+    movidos: int
+    resumos_sucesso: int
+    resumos_falha: int
+    por_categoria: dict[str, int]
+    destino: str
 
 
 class Logger(Protocol):
@@ -65,6 +78,24 @@ class RichLogger:
 
 class OperacaoCancelada(Exception):
     """Sinaliza o cancelamento solicitado pela interface."""
+
+
+def cancelar_futuros(futuros: list[Any]) -> None:
+    """Solicita cancelamento de todos os futures ainda pendentes."""
+    for futuro in futuros:
+        futuro.cancel()
+
+
+class _ExtratorHTML(HTMLParser):
+    """Coleta texto visível de um documento HTML."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.textos: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        if data.strip():
+            self.textos.append(data.strip())
 
 
 def caminho_base() -> Path:
@@ -115,7 +146,13 @@ def extrair_texto_pdf(caminho: Path, logger: Logger | None = None) -> str:
     """Extrai o texto disponível em todas as páginas de um PDF."""
     try:
         reader = PdfReader(str(caminho))
-        return "\n".join(pagina.extract_text() or "" for pagina in reader.pages).strip()
+        texto = "\n".join(pagina.extract_text() or "" for pagina in reader.pages).strip()
+        if len(texto) < 20 and caminho.stat().st_size > 50 * 1024:
+            (logger or RichLogger()).warning(
+                f"O arquivo {caminho.name} pode ser uma imagem ou PDF escaneado "
+                "(sem texto extraível). OCR indisponível."
+            )
+        return texto
     except Exception as erro:
         (logger or RichLogger()).warning(f"Não foi possível ler o PDF {caminho.name}: {erro}")
         return ""
@@ -146,12 +183,55 @@ def extrair_texto_docx(caminho: Path, logger: Logger | None = None) -> str:
         return ""
 
 
+def extrair_texto_pptx(caminho: Path, logger: Logger | None = None) -> str:
+    """Extrai textos de caixas e tabelas de uma apresentação PPTX."""
+    try:
+        from pptx import Presentation
+
+        apresentacao = Presentation(str(caminho))
+        textos: list[str] = []
+        for slide in apresentacao.slides:
+            for forma in slide.shapes:
+                if hasattr(forma, "text") and forma.text.strip():
+                    textos.append(forma.text.strip())
+        return "\n".join(textos)
+    except ImportError:
+        (logger or RichLogger()).warning("python-pptx não está instalado; PPTX ignorado.")
+    except Exception as erro:
+        (logger or RichLogger()).warning(f"Não foi possível ler o PPTX {caminho.name}: {erro}")
+    return ""
+
+
+def extrair_texto_html(caminho: Path, logger: Logger | None = None) -> str:
+    """Extrai texto simples de um arquivo HTML."""
+    try:
+        parser = _ExtratorHTML()
+        parser.feed(caminho.read_text(encoding="utf-8", errors="replace"))
+        return " ".join(parser.textos)
+    except OSError as erro:
+        (logger or RichLogger()).warning(f"Não foi possível ler o HTML {caminho.name}: {erro}")
+        return ""
+
+
+def extrair_texto_csv(caminho: Path, logger: Logger | None = None) -> str:
+    """Extrai e concatena as células de um arquivo CSV."""
+    try:
+        with caminho.open(newline="", encoding="utf-8", errors="replace") as arquivo:
+            return "\n".join(" | ".join(celula.strip() for celula in linha) for linha in csv.reader(arquivo)).strip()
+    except OSError as erro:
+        (logger or RichLogger()).warning(f"Não foi possível ler o CSV {caminho.name}: {erro}")
+        return ""
+
+
 def extrair_texto(caminho: Path, logger: Logger | None = None) -> str:
     """Seleciona o extrator compatível com a extensão."""
     extratores: dict[str, Callable[[Path, Logger | None], str]] = {
         ".pdf": extrair_texto_pdf,
         ".txt": extrair_texto_txt,
         ".docx": extrair_texto_docx,
+        ".pptx": extrair_texto_pptx,
+        ".html": extrair_texto_html,
+        ".csv": extrair_texto_csv,
     }
     extrator = extratores.get(caminho.suffix.lower())
     return extrator(caminho, logger) if extrator else ""
@@ -181,14 +261,14 @@ def gerar_resumo(texto: str, nome_arquivo: str, model: str = MODELO_PADRAO,
             return (resposta.choices[0].message.content or "").strip()
         except RateLimitError:
             if tentativa < 2:
-                time.sleep(2 ** tentativa)
+                time.sleep((2 ** tentativa) + random.uniform(0.1, 0.5))
         except (APIConnectionError, APIStatusError) as erro:
             status = getattr(erro, "status_code", None)
             if status in {400, 401, 403, 404}:
                 (logger or RichLogger()).error(f"Falha permanente da API ao resumir {nome_arquivo}: {erro}")
                 return "Erro permanente da API ao gerar o resumo."
             if tentativa < 2:
-                time.sleep(2 ** tentativa)
+                time.sleep((2 ** tentativa) + random.uniform(0.1, 0.5))
             else:
                 (logger or RichLogger()).warning(f"Falha da API ao resumir {nome_arquivo}: {erro}")
         except Exception as erro:
@@ -216,7 +296,8 @@ def salvar_resumo(pasta_resumos: Path, nome_arquivo: str, resumo: str) -> None:
 def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = False,
                    model: str = MODELO_PADRAO, max_files: int | None = None,
                    logger: Logger | None = None, progresso: Callable[[float], None] | None = None,
-                   cancel_event: threading.Event | None = None) -> None:
+                   cancel_event: threading.Event | None = None,
+                   estatisticas: Callable[[Estatisticas], None] | None = None) -> Estatisticas:
     """Organiza uma pasta e gera resumos opcionalmente."""
     logger = logger or RichLogger()
     pasta = Path(caminho_pasta).expanduser().resolve()
@@ -227,7 +308,10 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
         arquivos = arquivos[:max_files]
     if not arquivos:
         logger.warning("Nenhum arquivo encontrado para organizar.")
-        return
+        resultado: Estatisticas = {"movidos": 0, "resumos_sucesso": 0, "resumos_falha": 0, "por_categoria": {}, "destino": str(pasta)}
+        if estatisticas:
+            estatisticas(resultado)
+        return resultado
     pasta_resumos = pasta / "resumos"
     if not dry_run:
         pasta_resumos.mkdir(exist_ok=True)
@@ -260,6 +344,7 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
             except OSError as erro:
                 logger.error(f"Falha ao mover {arquivo.name}: {erro}")
     resumos: set[str] = set()
+    resumos_falha = 0
     tarefas_ia = [(arquivo, texto) for arquivo, _, _, texto in planos if texto and not no_ai]
     if tarefas_ia and dry_run:
         for arquivo, _ in tarefas_ia:
@@ -275,22 +360,39 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
                 progresso(0.5)
         else:
             client = Groq(api_key=api_key)
-            with ThreadPoolExecutor(max_workers=min(8, len(tarefas_ia))) as executor:
+            executor = ThreadPoolExecutor(max_workers=min(8, len(tarefas_ia)))
+            try:
                 futuros = {executor.submit(gerar_resumo, texto, arquivo.name, model, client, logger): arquivo for arquivo, texto in tarefas_ia}
                 for indice, futuro in enumerate(as_completed(futuros), 1):
                     if cancel_event and cancel_event.is_set():
+                        cancelar_futuros(list(futuros))
                         raise OperacaoCancelada
                     arquivo = futuros[futuro]
-                    salvar_resumo(pasta_resumos, arquivo.name, futuro.result())
+                    resumo = futuro.result()
+                    salvar_resumo(pasta_resumos, arquivo.name, resumo)
                     resumos.add(arquivo.name)
+                    if resumo.startswith("Erro"):
+                        resumos_falha += 1
                     if progresso:
                         progresso(indice / (len(tarefas_ia) * 2))
+            finally:
+                executor.shutdown(wait=False, cancel_futures=True)
     elif progresso:
         progresso(0.5)
     contagem = Counter(categoria for _, categoria, _, _ in planos)
     logger.info(f"Concluído: {movidos} arquivo(s) movido(s); {len(resumos)} resumo(s) criado(s).")
     for categoria in sorted(contagem):
         logger.info(f"{categoria}: {contagem[categoria]} arquivo(s), {sum(1 for arquivo, cat, _, _ in planos if cat == categoria and arquivo.name in resumos)} resumo(s)")
+    resultado = {
+        "movidos": movidos,
+        "resumos_sucesso": len(resumos) - resumos_falha,
+        "resumos_falha": resumos_falha,
+        "por_categoria": dict(contagem),
+        "destino": str(pasta),
+    }
+    if estatisticas:
+        estatisticas(resultado)
+    return resultado
 
 
 def construir_parser() -> argparse.ArgumentParser:

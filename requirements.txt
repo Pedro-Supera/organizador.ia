@@ -2,6 +2,7 @@ groq
 python-dotenv
 pypdf
 python-docx
+python-pptx
 rich
 customtkinter
 pyinstaller
