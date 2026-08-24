@@ -3,3 +3,8 @@ python-dotenv
 pypdf
 python-docx
 rich
+customtkinter
+pyinstaller
+
+# Gerar executável no Linux:
+# pyinstaller --noconsole --onefile app.py

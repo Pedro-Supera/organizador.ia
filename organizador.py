@@ -134,7 +134,8 @@ def salvar_resumo(pasta_resumos: Path, nome_arquivo: str, resumo: str) -> None:
 
 
 def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = False,
-                   model: str = "qwen/qwen3.6-27b", max_files: int | None = None) -> None:
+                   model: str = "qwen/qwen3.6-27b", max_files: int | None = None,
+                   progresso=None) -> None:
     pasta = Path(caminho_pasta).expanduser().resolve()
     if not pasta.is_dir():
         raise ValueError(f"A pasta '{pasta}' não existe ou não é um diretório.")
@@ -163,6 +164,8 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
             texto = extrair_texto(arquivo) if arquivo.suffix.lower() in {".pdf", ".txt", ".docx"} else ""
             planos.append((arquivo, categoria, destino, texto))
             progress.advance(tarefa)
+            if progresso:
+                progresso(1 / (len(arquivos) * 2))
 
     movidos = 0
     for arquivo, categoria, destino, _ in planos:
@@ -181,11 +184,15 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
     if tarefas_ia and dry_run:
         for arquivo, _ in tarefas_ia:
             console.print(f"[cyan]SIMULAÇÃO[/cyan] gerar resumo para {arquivo.name}")
+        if progresso:
+            progresso(0.5)
     elif tarefas_ia:
         load_dotenv()
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             console.print(Panel("GROQ_API_KEY não configurada; resumos de IA ignorados.", title="Atenção", style="yellow"))
+            if progresso:
+                progresso(0.5)
         else:
             client = Groq(api_key=api_key)
             with ThreadPoolExecutor(max_workers=min(8, len(tarefas_ia))) as executor:
@@ -197,6 +204,10 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
                         salvar_resumo(pasta_resumos, arquivo.name, futuro.result())
                         resumos.add(arquivo.name)
                         progress.advance(tarefa)
+                        if progresso:
+                            progresso(1 / (len(tarefas_ia) * 2))
+    elif progresso:
+        progresso(0.5)
 
     tabela = Table(title="Relatório da organização")
     tabela.add_column("Categoria")
