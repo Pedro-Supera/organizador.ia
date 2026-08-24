@@ -16,7 +16,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Protocol, TypedDict
 
-from dotenv import load_dotenv
+from dotenv import load_dotenv, set_key
 from groq import APIConnectionError, APIStatusError, Groq, RateLimitError
 from pypdf import PdfReader
 from rich.console import Console
@@ -134,6 +134,36 @@ def carregar_ambiente() -> Path | None:
             load_dotenv(dotenv_path=caminho)
             return caminho
     return None
+
+
+def salvar_chave_api(chave: str) -> bool:
+    """Salva a chave da Groq com permissões restritas no arquivo `.env`."""
+    if not chave:
+        return True
+    try:
+        caminho_env = caminho_env_gravavel()
+        set_key(str(caminho_env), "GROQ_API_KEY", chave)
+        if os.name != "nt":
+            os.chmod(caminho_env, 0o600)
+        os.environ["GROQ_API_KEY"] = chave
+        return True
+    except (OSError, PermissionError) as erro:
+        RichLogger().error(f"Falha ao salvar chave da API: {erro}")
+        return False
+
+
+def listar_arquivos_elegiveis(caminho_pasta: str | Path, max_files: int | None = None) -> list[Path]:
+    """Lista arquivos elegíveis, ordenados e opcionalmente limitados."""
+    pasta = Path(caminho_pasta).expanduser().resolve()
+    if not pasta.is_dir():
+        raise ValueError(f"A pasta '{pasta}' não existe ou não é um diretório.")
+    arquivos = sorted(
+        (item for item in pasta.iterdir() if item.is_file() and item.name not in ARQUIVOS_INTERNOS),
+        key=lambda item: item.name.lower(),
+    )
+    if isinstance(max_files, int) and max_files > 0:
+        arquivos = arquivos[:max_files]
+    return arquivos
 
 
 def obter_categoria(extensao: str) -> str:
@@ -311,11 +341,7 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
     """Organiza uma pasta e gera resumos opcionalmente."""
     logger = logger or RichLogger()
     pasta = Path(caminho_pasta).expanduser().resolve()
-    if not pasta.is_dir():
-        raise ValueError(f"A pasta '{pasta}' não existe ou não é um diretório.")
-    arquivos = sorted((item for item in pasta.iterdir() if item.is_file() and item.name not in ARQUIVOS_INTERNOS), key=lambda item: item.name.lower())
-    if max_files is not None:
-        arquivos = arquivos[:max_files]
+    arquivos = listar_arquivos_elegiveis(pasta, max_files)
     if not arquivos:
         logger.warning("Nenhum arquivo encontrado para organizar.")
         resultado: Estatisticas = {"movidos": 0, "resumos_sucesso": 0, "resumos_falha": 0, "por_categoria": {}, "destino": str(pasta)}

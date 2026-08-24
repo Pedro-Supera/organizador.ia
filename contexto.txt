@@ -1,0 +1,63 @@
+
+Ao alterar o comportamento do nucleo, atualize ou crie um teste correspondente em `tests/test_organizador.py`. Preserve a separacao entre logica em `organizador.py` e interface em `app.py`.
+# Organizador Inteligente
+
+## Objetivo
+Aplicacao Python que organiza arquivos de uma pasta por categoria e pode gerar resumos curtos em portugues usando a API da Groq.
+
+## Estrutura
+- `organizador.py`: nucleo, CLI, classificacao, movimentacao, leitura de texto e resumos.
+- `app.py`: interface grafica em CustomTkinter.
+- `tests/test_organizador.py`: testes automatizados do nucleo e da GUI.
+- `requirements.txt`: dependencias do projeto.
+- `.env`: configuracao local; nunca versionar a chave da API.
+
+## Uso
+Ative o ambiente virtual e instale as dependencias:
+
+```bash
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Interface grafica:
+
+```bash
+python app.py
+```
+
+Linha de comando:
+
+```bash
+python organizador.py PASTA --dry-run --no-ai
+python organizador.py PASTA --max-files 10 --model qwen/qwen3.6-27b
+```
+
+`--dry-run` simula sem alterar arquivos. `--no-ai` desativa resumos. Use `--max-files` para limitar a operacao.
+
+## Funcionamento
+Arquivos sao classificados por extensao em `pdfs`, `imagens`, `documentos`, `planilhas`, `compactados` ou `outros`. Nomes repetidos recebem sufixo numerico. Resumos sao salvos em `resumos/resumo_NOME.md` sem sobrescrever arquivos existentes.
+
+Extensoes com extracao de texto: PDF, TXT, DOCX, PPTX, HTML e CSV. PDFs escaneados nao tem OCR.
+
+Arquivos internos ignorados: `.env`, `.gitignore`, `contexto.txt`, `organizador.py` e `app.py`.
+
+A listagem é centralizada em `listar_arquivos_elegiveis()`, usada pelo núcleo e pela GUI. Ela valida a pasta, ignora itens que não são arquivos e arquivos internos, ordena por nome e aceita `max_files` maior que zero.
+
+O salvamento da `GROQ_API_KEY` é centralizado em `salvar_chave_api()`. A chave é gravada no `.env` escolhido por `caminho_env_gravavel()`, recebe permissão `0o600` em Linux/macOS e também atualiza o ambiente do processo.
+
+## IA
+Defina `GROQ_API_KEY` no `.env` ou pela interface. O modelo padrao e `qwen/qwen3.6-27b`. A aplicacao tenta novamente falhas temporarias da API e registra erros sem interromper a organizacao dos arquivos.
+
+## Testes e distribuicao
+Execute os testes com:
+
+```bash
+PYTHONPATH=. pytest -q
+```
+
+Para gerar um executavel Linux:
+
+```bash
+pyinstaller --noconsole --onefile app.py
+```

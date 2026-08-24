@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 import warnings
 
@@ -22,6 +23,30 @@ class LoggerDeTeste:
 def test_obter_categoria_case_insensitive():
     assert organizador.obter_categoria(".DOCX") == "documentos"
     assert organizador.obter_categoria(".desconhecido") == "outros"
+
+
+def test_listar_arquivos_elegiveis(tmp_path):
+    (tmp_path / "zeta.txt").touch()
+    (tmp_path / "Alfa.txt").touch()
+    (tmp_path / ".env").touch()
+    (tmp_path / "organizador.py").touch()
+    (tmp_path / ".oculta").mkdir()
+
+    arquivos = organizador.listar_arquivos_elegiveis(tmp_path)
+    limitados = organizador.listar_arquivos_elegiveis(tmp_path, max_files=1)
+
+    assert [arquivo.name for arquivo in arquivos] == ["Alfa.txt", "zeta.txt"]
+    assert [arquivo.name for arquivo in limitados] == ["Alfa.txt"]
+
+
+def test_salvar_chave_api_permissoes(tmp_path, monkeypatch):
+    caminho_env = tmp_path / ".env"
+    monkeypatch.setattr(organizador, "caminho_env_gravavel", lambda: caminho_env)
+
+    assert organizador.salvar_chave_api("chave-de-teste") is True
+    assert os.environ["GROQ_API_KEY"] == "chave-de-teste"
+    if os.name != "nt":
+        assert os.stat(caminho_env).st_mode & 0o777 == 0o600
 
 
 def test_extrair_texto_txt_latin1(tmp_path):

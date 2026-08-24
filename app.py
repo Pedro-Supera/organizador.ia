@@ -15,7 +15,6 @@ from tkinter import filedialog, messagebox
 from typing import Any
 
 import customtkinter as ctk
-from dotenv import set_key
 
 import organizador
 
@@ -255,16 +254,10 @@ class OrganizadorApp(ctk.CTk):
 
     def _salvar_chave(self) -> bool:
         chave = self.chave_var.get().strip()
-        if not chave:
-            return True
-        try:
-            set_key(str(organizador.caminho_env_gravavel()), "GROQ_API_KEY", chave)
-            os.environ["GROQ_API_KEY"] = chave
-            return True
-        except OSError as erro:
-            self._adicionar_log(f"Falha ao salvar .env: {erro}")
-            messagebox.showerror("Falha ao salvar chave", str(erro))
+        if not organizador.salvar_chave_api(chave):
+            messagebox.showerror("Falha ao salvar chave", "Não foi possível salvar a chave da API.")
             return False
+        return True
 
     def _iniciar(self) -> None:
         pasta = self.pasta_var.get().strip()
@@ -276,8 +269,8 @@ class OrganizadorApp(ctk.CTk):
         except ValueError as erro:
             messagebox.showwarning("Limite inválido", str(erro))
             return
-        arquivos = [item for item in Path(pasta).iterdir() if item.is_file() and item.name not in organizador.ARQUIVOS_INTERNOS]
-        quantidade = min(len(arquivos), max_files) if max_files else len(arquivos)
+        arquivos = organizador.listar_arquivos_elegiveis(pasta, max_files)
+        quantidade = len(arquivos)
         if not messagebox.askyesno("Confirmar organização", f"Serão processados {quantidade} arquivo(s). Deseja continuar?"):
             return
         if not self._salvar_chave():
