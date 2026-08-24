@@ -12,9 +12,9 @@ import time
 from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Protocol, TypedDict
-from html.parser import HTMLParser
 
 from dotenv import load_dotenv
 from groq import APIConnectionError, APIStatusError, Groq, RateLimitError
@@ -31,7 +31,7 @@ ARQUIVOS_INTERNOS = {".env", ".gitignore", "contexto.txt", "organizador.py", "ap
 CATEGORIAS = {
     "pdfs": [".pdf"],
     "imagens": [".jpg", ".jpeg", ".png", ".bmp", ".webp", ".gif"],
-    "documentos": [".doc", ".docx", ".odt", ".txt", ".rtf"],
+    "documentos": [".doc", ".docx", ".odt", ".txt", ".rtf", ".pptx", ".html"],
     "planilhas": [".xls", ".xlsx", ".csv", ".ods"],
     "compactados": [".zip", ".rar", ".7z", ".tar", ".gz"],
 }
@@ -261,20 +261,30 @@ def gerar_resumo(texto: str, nome_arquivo: str, model: str = MODELO_PADRAO,
             return (resposta.choices[0].message.content or "").strip()
         except RateLimitError:
             if tentativa < 2:
-                time.sleep((2 ** tentativa) + random.uniform(0.1, 0.5))
+                _aguardar_retry(tentativa)
         except (APIConnectionError, APIStatusError) as erro:
             status = getattr(erro, "status_code", None)
             if status in {400, 401, 403, 404}:
                 (logger or RichLogger()).error(f"Falha permanente da API ao resumir {nome_arquivo}: {erro}")
                 return "Erro permanente da API ao gerar o resumo."
+            if status is None or status >= 500:
+                if tentativa < 2:
+                    _aguardar_retry(tentativa)
+                    continue
             if tentativa < 2:
-                time.sleep((2 ** tentativa) + random.uniform(0.1, 0.5))
+                _aguardar_retry(tentativa)
             else:
                 (logger or RichLogger()).warning(f"Falha da API ao resumir {nome_arquivo}: {erro}")
         except Exception as erro:
             (logger or RichLogger()).warning(f"Erro ao gerar resumo de {nome_arquivo}: {erro}")
             break
     return "Erro ao gerar resumo com a IA."
+
+
+def _aguardar_retry(tentativa: int) -> None:
+    """Aguarda com backoff exponencial e jitter antes de repetir uma chamada."""
+    atraso = min(30.0, 2 ** tentativa) + random.uniform(0.1, 0.5)
+    time.sleep(atraso)
 
 
 def proximo_destino(destino: Path) -> Path:
@@ -325,7 +335,8 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
         while destino in usados:
             destino = proximo_destino(destino)
         usados.add(destino)
-        texto = extrair_texto(arquivo, logger) if arquivo.suffix.lower() in {".pdf", ".txt", ".docx"} else ""
+        extensoes_texto = {".pdf", ".txt", ".docx", ".pptx", ".html", ".csv"}
+        texto = extrair_texto(arquivo, logger) if arquivo.suffix.lower() in extensoes_texto else ""
         planos.append((arquivo, categoria, destino, texto))
         if progresso:
             progresso(indice / (len(arquivos) * 2))

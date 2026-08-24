@@ -133,6 +133,25 @@ def test_novas_extensoes_de_texto(tmp_path):
 
     assert organizador.extrair_texto(html) == "Título Conteúdo"
     assert organizador.extrair_texto(csv) == "nome | valor\nproduto | 10"
+    assert organizador.obter_categoria(".html") == "documentos"
+    assert organizador.obter_categoria(".pptx") == "documentos"
+
+
+def test_fluxo_retorna_estatisticas_e_processa_csv(tmp_path):
+    csv = tmp_path / "dados.csv"
+    csv.write_text("nome,valor\nproduto,10", encoding="utf-8")
+    recebidos = []
+
+    resultado = organizador.organizar_pasta(
+        tmp_path,
+        no_ai=True,
+        estatisticas=recebidos.append,
+    )
+
+    assert resultado["movidos"] == 1
+    assert resultado["por_categoria"] == {"planilhas": 1}
+    assert recebidos == [resultado]
+    assert (tmp_path / "planilhas" / "dados.csv").exists()
 
 
 def test_sanitizacao_de_max_files():
