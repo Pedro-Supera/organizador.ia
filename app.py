@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import os
 import queue
+import subprocess
 import threading
 import webbrowser
 from collections.abc import Callable
@@ -14,13 +15,23 @@ from tkinter import filedialog, messagebox
 from typing import Any
 
 import customtkinter as ctk
-from dotenv import load_dotenv, set_key
+from dotenv import set_key
 
 import organizador
 
 
+def validar_max_files(valor: str) -> int | None:
+    """Converte um limite de arquivos válido ou retorna None para ilimitado."""
+    valor = valor.strip()
+    if not valor:
+        return None
+    if not valor.isdigit() or int(valor) <= 0:
+        raise ValueError("O limite deve ser um número inteiro maior que zero.")
+    return int(valor)
+
+
 class GuiLogger:
-    """Envia mensagens do núcleo para o log da interface com timestamp."""
+    """Envia mensagens do núcleo para o log com timestamp."""
 
     def __init__(self, eventos: queue.Queue[tuple[str, Any]]) -> None:
         self.eventos = eventos
@@ -30,20 +41,20 @@ class GuiLogger:
         self.eventos.put(("log", f"[{horario}] {nivel}: {mensagem}"))
 
     def info(self, mensagem: str) -> None:
-        """Registra uma informação."""
+        """Registra informação."""
         self._enviar("INFO", mensagem)
 
     def warning(self, mensagem: str) -> None:
-        """Registra um alerta."""
+        """Registra alerta."""
         self._enviar("AVISO", mensagem)
 
     def error(self, mensagem: str) -> None:
-        """Registra um erro."""
+        """Registra erro."""
         self._enviar("ERRO", mensagem)
 
 
 class HeaderFrame(ctk.CTkFrame):
-    """Apresenta o título e a descrição do aplicativo."""
+    """Apresenta o cabeçalho da aplicação."""
 
     def __init__(self, master: ctk.CTkBaseClass) -> None:
         super().__init__(master, fg_color="transparent")
@@ -58,14 +69,21 @@ class DirectorySelectionFrame(ctk.CTkFrame):
         super().__init__(master)
         self.pasta_var = pasta_var
         self.grid_columnconfigure(0, weight=1)
+        self.entrada = ctk.CTkEntry(self, textvariable=pasta_var, state="readonly")
+        self.botao = ctk.CTkButton(self, text="Procurar...", width=120, command=self._procurar)
         ctk.CTkLabel(self, text="Pasta para organizar", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=2, padx=16, pady=(14, 6), sticky="w")
-        ctk.CTkEntry(self, textvariable=pasta_var, state="readonly").grid(row=1, column=0, padx=(16, 8), pady=(0, 14), sticky="ew")
-        ctk.CTkButton(self, text="Procurar...", width=120, command=self._procurar).grid(row=1, column=1, padx=(0, 16), pady=(0, 14))
+        self.entrada.grid(row=1, column=0, padx=(16, 8), pady=(0, 14), sticky="ew")
+        self.botao.grid(row=1, column=1, padx=(0, 16), pady=(0, 14))
 
     def _procurar(self) -> None:
         pasta = filedialog.askdirectory(title="Selecione a pasta para organizar")
         if pasta:
             self.pasta_var.set(pasta)
+
+    def definir_estado(self, estado: str) -> None:
+        """Ativa ou bloqueia os controles do frame."""
+        self.entrada.configure(state="normal" if estado == "normal" else "disabled")
+        self.botao.configure(state=estado)
 
 
 class SettingsFrame(ctk.CTkFrame):
@@ -77,29 +95,36 @@ class SettingsFrame(ctk.CTkFrame):
                  ia_var: ctk.BooleanVar, teste_var: ctk.BooleanVar, max_files_var: ctk.StringVar,
                  abrir_chaves: Callable[[], None]) -> None:
         super().__init__(master)
-        self.chave_var = chave_var
-        self.modelo_var = modelo_var
-        self.ia_var = ia_var
-        self.teste_var = teste_var
-        self.max_files_var = max_files_var
+        self.controles: list[ctk.CTkBaseClass] = []
         self.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(self, text="Configurações", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=4, padx=16, pady=(14, 8), sticky="w")
         ctk.CTkLabel(self, text="Chave Groq").grid(row=1, column=0, padx=(16, 8), pady=6, sticky="w")
-        ctk.CTkEntry(self, textvariable=chave_var, show="*").grid(row=1, column=1, padx=8, pady=6, sticky="ew")
-        ctk.CTkButton(self, text="Obter Chave Grátis", width=150, command=abrir_chaves).grid(row=1, column=2, padx=8, pady=6)
-        ctk.CTkSwitch(self, text="Ativar resumos com IA", variable=ia_var).grid(row=1, column=3, padx=(8, 16), pady=6, sticky="w")
+        chave = ctk.CTkEntry(self, textvariable=chave_var, show="*")
+        chave.grid(row=1, column=1, padx=8, pady=6, sticky="ew")
+        obter = ctk.CTkButton(self, text="Obter Chave Grátis", width=150, command=abrir_chaves)
+        obter.grid(row=1, column=2, padx=8, pady=6)
+        ia = ctk.CTkSwitch(self, text="Ativar resumos com IA", variable=ia_var)
+        ia.grid(row=1, column=3, padx=(8, 16), pady=6, sticky="w")
         ctk.CTkLabel(self, text="Modelo").grid(row=2, column=0, padx=(16, 8), pady=(6, 14), sticky="w")
         modelo = ctk.CTkComboBox(self, variable=modelo_var, values=self.MODELOS)
         modelo.grid(row=2, column=1, columnspan=2, padx=8, pady=(6, 14), sticky="ew")
         ctk.CTkLabel(self, text="Modelo usado para gerar os resumos.", text_color="#9BA4B5").grid(row=3, column=1, columnspan=2, padx=8, sticky="w")
-        ctk.CTkCheckBox(self, text="Modo Teste / Dry Run", variable=teste_var).grid(row=2, column=3, padx=(8, 16), pady=(6, 14), sticky="w")
+        teste = ctk.CTkCheckBox(self, text="Modo Teste / Dry Run", variable=teste_var)
+        teste.grid(row=2, column=3, padx=(8, 16), pady=(6, 14), sticky="w")
         ctk.CTkLabel(self, text="Máximo de arquivos").grid(row=4, column=0, padx=(16, 8), pady=(6, 14), sticky="w")
-        ctk.CTkEntry(self, textvariable=max_files_var, placeholder_text="Todos").grid(row=4, column=1, columnspan=2, padx=8, pady=(6, 14), sticky="ew")
+        maximo = ctk.CTkEntry(self, textvariable=max_files_var, placeholder_text="Todos")
+        maximo.grid(row=4, column=1, columnspan=2, padx=8, pady=(6, 14), sticky="ew")
         ctk.CTkLabel(self, text="O Dry Run apenas simula a operação.", text_color="#9BA4B5").grid(row=4, column=3, padx=(8, 16), pady=(6, 14), sticky="w")
+        self.controles = [chave, obter, ia, modelo, teste, maximo]
+
+    def definir_estado(self, estado: str) -> None:
+        """Ativa ou bloqueia os controles do frame."""
+        for controle in self.controles:
+            controle.configure(state=estado)
 
 
 class ConsoleLogFrame(ctk.CTkFrame):
-    """Exibe o log da operação."""
+    """Exibe e exporta o log da operação."""
 
     def __init__(self, master: ctk.CTkBaseClass) -> None:
         super().__init__(master)
@@ -107,7 +132,11 @@ class ConsoleLogFrame(ctk.CTkFrame):
         self.grid_rowconfigure(1, weight=1)
         ctk.CTkLabel(self, text="Log de execução", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=16, pady=(14, 8), sticky="w")
         self.caixa = ctk.CTkTextbox(self, wrap="word", state="disabled", font=ctk.CTkFont(family="Courier", size=12))
-        self.caixa.grid(row=1, column=0, padx=16, pady=(0, 16), sticky="nsew")
+        self.caixa.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="nsew")
+        utilitarios = ctk.CTkFrame(self, fg_color="transparent")
+        utilitarios.grid(row=2, column=0, padx=16, pady=(0, 12), sticky="e")
+        ctk.CTkButton(utilitarios, text="Limpar Log", width=110, command=self.limpar).pack(side="left", padx=4)
+        ctk.CTkButton(utilitarios, text="Exportar Log", width=120, command=self.exportar).pack(side="left", padx=4)
 
     def adicionar(self, mensagem: str) -> None:
         """Adiciona uma linha ao log."""
@@ -115,6 +144,19 @@ class ConsoleLogFrame(ctk.CTkFrame):
         self.caixa.insert("end", mensagem + "\n")
         self.caixa.see("end")
         self.caixa.configure(state="disabled")
+
+    def limpar(self) -> None:
+        """Limpa todo o conteúdo do log."""
+        self.caixa.configure(state="normal")
+        self.caixa.delete("1.0", "end")
+        self.caixa.configure(state="disabled")
+
+    def exportar(self) -> None:
+        """Salva o conteúdo do log em um arquivo de texto."""
+        caminho = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Texto", "*.txt")])
+        if caminho:
+            conteudo = self.caixa.get("1.0", "end-1c")
+            Path(caminho).write_text(conteudo, encoding="utf-8")
 
 
 class ExecutionControlFrame(ctk.CTkFrame):
@@ -132,18 +174,50 @@ class ExecutionControlFrame(ctk.CTkFrame):
         self.cancelar.grid(row=0, column=2)
 
 
+class StatisticsFrame(ctk.CTkFrame):
+    """Exibe o resumo da última execução."""
+
+    def __init__(self, master: ctk.CTkBaseClass) -> None:
+        super().__init__(master)
+        self.grid_columnconfigure(0, weight=1)
+        self.texto = ctk.CTkLabel(self, text="Nenhuma execução concluída.", anchor="w")
+        self.texto.grid(row=0, column=0, padx=14, pady=10, sticky="ew")
+        self.abrir = ctk.CTkButton(self, text="Abrir Pasta de Destino", width=170, state="disabled", command=self._abrir)
+        self.abrir.grid(row=0, column=1, padx=14, pady=8)
+        self.destino = ""
+
+    def atualizar(self, estatisticas: organizador.Estatisticas, duracao: float) -> None:
+        """Atualiza as estatísticas apresentadas ao usuário."""
+        categorias = ", ".join(f"{chave}: {valor}" for chave, valor in estatisticas["por_categoria"].items()) or "nenhuma"
+        self.texto.configure(text=(f"Tempo: {duracao:.1f}s | Movidos: {estatisticas['movidos']} | "
+                                   f"Resumos: {estatisticas['resumos_sucesso']} sucesso(s), {estatisticas['resumos_falha']} falha(s) | "
+                                   f"Categorias: {categorias}"))
+        self.destino = estatisticas["destino"]
+        self.abrir.configure(state="normal")
+
+    def _abrir(self) -> None:
+        """Abre a pasta de destino no gerenciador de arquivos."""
+        if os.name == "nt":
+            os.startfile(self.destino)
+        elif os.name == "posix":
+            subprocess.Popen(["xdg-open", self.destino])
+        else:
+            webbrowser.open(Path(self.destino).as_uri())
+
+
 class OrganizadorApp(ctk.CTk):
-    """Janela principal com estado de execução centralizado."""
+    """Janela principal do organizador."""
 
     def __init__(self) -> None:
         super().__init__()
         self.title("Organizador Inteligente")
-        self.geometry("920x720")
-        self.minsize(760, 620)
+        self.geometry("960x820")
+        self.minsize(800, 700)
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
         organizador.carregar_ambiente()
         self.estado = "ocioso"
+        self.inicio_execucao = 0.0
         self.eventos: queue.Queue[tuple[str, Any]] = queue.Queue()
         self.pasta_var = ctk.StringVar()
         self.chave_var = ctk.StringVar(value=os.getenv("GROQ_API_KEY", ""))
@@ -159,23 +233,32 @@ class OrganizadorApp(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)
         HeaderFrame(self).grid(row=0, column=0, padx=28, pady=(24, 12), sticky="ew")
-        DirectorySelectionFrame(self, self.pasta_var).grid(row=1, column=0, padx=28, pady=8, sticky="ew")
-        SettingsFrame(self, self.chave_var, self.modelo_var, self.ia_var, self.teste_var, self.max_files_var, self._abrir_chaves_groq).grid(row=2, column=0, padx=28, pady=8, sticky="ew")
+        self.pasta_frame = DirectorySelectionFrame(self, self.pasta_var)
+        self.pasta_frame.grid(row=1, column=0, padx=28, pady=8, sticky="ew")
+        self.config_frame = SettingsFrame(self, self.chave_var, self.modelo_var, self.ia_var, self.teste_var, self.max_files_var, self._abrir_chaves_groq)
+        self.config_frame.grid(row=2, column=0, padx=28, pady=8, sticky="ew")
         self.log_frame = ConsoleLogFrame(self)
         self.log_frame.grid(row=3, column=0, padx=28, pady=8, sticky="nsew")
+        self.estatisticas_frame = StatisticsFrame(self)
+        self.estatisticas_frame.grid(row=4, column=0, padx=28, pady=8, sticky="ew")
         self.controles = ExecutionControlFrame(self, self._iniciar, self._cancelar)
-        self.controles.grid(row=4, column=0, padx=28, pady=(8, 24), sticky="ew")
+        self.controles.grid(row=5, column=0, padx=28, pady=(8, 24), sticky="ew")
 
     def _abrir_chaves_groq(self) -> None:
         webbrowser.open_new_tab(organizador.URL_CHAVES_GROQ)
+
+    def _definir_estado_interface(self, estado: str) -> None:
+        """Atualiza o estado de todos os controles da aplicação."""
+        self.pasta_frame.definir_estado(estado)
+        self.config_frame.definir_estado(estado)
+        self.controles.iniciar.configure(state=estado)
 
     def _salvar_chave(self) -> bool:
         chave = self.chave_var.get().strip()
         if not chave:
             return True
         try:
-            caminho = organizador.caminho_env_gravavel()
-            set_key(str(caminho), "GROQ_API_KEY", chave)
+            set_key(str(organizador.caminho_env_gravavel()), "GROQ_API_KEY", chave)
             os.environ["GROQ_API_KEY"] = chave
             return True
         except OSError as erro:
@@ -188,15 +271,11 @@ class OrganizadorApp(ctk.CTk):
         if not pasta or not Path(pasta).is_dir():
             messagebox.showwarning("Pasta inválida", "Selecione uma pasta válida antes de iniciar.")
             return
-        max_files: int | None = None
-        if self.max_files_var.get().strip():
-            try:
-                max_files = int(self.max_files_var.get())
-                if max_files < 1:
-                    raise ValueError
-            except ValueError:
-                messagebox.showwarning("Limite inválido", "Informe um número maior que zero.")
-                return
+        try:
+            max_files = validar_max_files(self.max_files_var.get())
+        except ValueError as erro:
+            messagebox.showwarning("Limite inválido", str(erro))
+            return
         arquivos = [item for item in Path(pasta).iterdir() if item.is_file() and item.name not in organizador.ARQUIVOS_INTERNOS]
         quantidade = min(len(arquivos), max_files) if max_files else len(arquivos)
         if not messagebox.askyesno("Confirmar organização", f"Serão processados {quantidade} arquivo(s). Deseja continuar?"):
@@ -204,20 +283,23 @@ class OrganizadorApp(ctk.CTk):
         if not self._salvar_chave():
             return
         self.estado = "executando"
+        self.inicio_execucao = threading.get_native_id()
         self.cancelamento.clear()
-        self.controles.iniciar.configure(state="disabled", text="Processando...")
+        self._definir_estado_interface("disabled")
         self.controles.cancelar.configure(state="normal")
         self.controles.barra.set(0)
         configuracoes = (self.teste_var.get(), not self.ia_var.get(), self.modelo_var.get(), max_files)
-        threading.Thread(target=self._executar, args=(pasta, configuracoes), daemon=True).start()
+        inicio = datetime.now()
+        threading.Thread(target=self._executar, args=(pasta, configuracoes, inicio), daemon=True).start()
 
-    def _executar(self, pasta: str, configuracoes: tuple[bool, bool, str, int | None]) -> None:
+    def _executar(self, pasta: str, configuracoes: tuple[bool, bool, str, int | None], inicio: datetime) -> None:
         dry_run, no_ai, modelo, max_files = configuracoes
         logger = GuiLogger(self.eventos)
         try:
-            organizador.organizar_pasta(pasta, dry_run=dry_run, no_ai=no_ai, model=modelo, max_files=max_files,
-                                        logger=logger, progresso=lambda valor: self.eventos.put(("progresso", valor)),
-                                        cancel_event=self.cancelamento)
+            resultado = organizador.organizar_pasta(pasta, dry_run=dry_run, no_ai=no_ai, model=modelo, max_files=max_files,
+                                                    logger=logger, progresso=lambda valor: self.eventos.put(("progresso", valor)),
+                                                    cancel_event=self.cancelamento)
+            self.eventos.put(("estatisticas", (resultado, (datetime.now() - inicio).total_seconds())))
             self.eventos.put(("fim", "Organização concluída."))
         except organizador.OperacaoCancelada:
             self.eventos.put(("cancelado", "Operação cancelada."))
@@ -240,10 +322,12 @@ class OrganizadorApp(ctk.CTk):
                     self._adicionar_log(valor)
                 elif tipo == "progresso":
                     self.controles.barra.set(min(1.0, self.controles.barra.get() + valor))
+                elif tipo == "estatisticas":
+                    self.estatisticas_frame.atualizar(valor[0], valor[1])
                 elif tipo in {"fim", "cancelado", "erro"}:
                     self.estado = "ocioso" if tipo != "erro" else "erro"
                     self._adicionar_log(valor if tipo != "erro" else f"ERRO: {valor}")
-                    self.controles.iniciar.configure(state="normal", text="Iniciar Organização")
+                    self._definir_estado_interface("normal")
                     self.controles.cancelar.configure(state="disabled")
                     if tipo == "erro":
                         messagebox.showerror("Erro na organização", valor)
