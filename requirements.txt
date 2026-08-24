@@ -5,6 +5,7 @@ python-docx
 rich
 customtkinter
 pyinstaller
+pytest
 
 # Gerar executável no Linux:
 # pyinstaller --noconsole --onefile app.py

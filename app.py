@@ -42,13 +42,15 @@ class OrganizadorApp(ctk.CTk):
         ctk.set_appearance_mode("dark")
         ctk.set_default_color_theme("blue")
 
-        load_dotenv()
+        load_dotenv(dotenv_path=organizador.CAMINHO_ENV)
         self.eventos = queue.Queue()
         self.pasta_var = ctk.StringVar()
         self.chave_var = ctk.StringVar(value=os.getenv("GROQ_API_KEY", ""))
         self.modelo_var = ctk.StringVar(value=self.MODELOS[0])
         self.ia_var = ctk.BooleanVar(value=True)
         self.teste_var = ctk.BooleanVar(value=False)
+        self.max_files_var = ctk.StringVar()
+        self.cancelamento = threading.Event()
         self.progresso = 0.0
         self._criar_interface()
         self.after(100, self._processar_eventos)
@@ -80,6 +82,8 @@ class OrganizadorApp(ctk.CTk):
         ctk.CTkLabel(opcoes, text="Modelo").grid(row=2, column=0, padx=(16, 8), pady=(6, 14), sticky="w")
         ctk.CTkComboBox(opcoes, variable=self.modelo_var, values=self.MODELOS).grid(row=2, column=1, padx=8, pady=(6, 14), sticky="ew")
         ctk.CTkCheckBox(opcoes, text="Modo Teste / Dry Run", variable=self.teste_var).grid(row=2, column=2, padx=(8, 16), pady=(6, 14), sticky="w")
+        ctk.CTkLabel(opcoes, text="Máximo de arquivos").grid(row=3, column=0, padx=(16, 8), pady=(0, 14), sticky="w")
+        ctk.CTkEntry(opcoes, textvariable=self.max_files_var, placeholder_text="Todos").grid(row=3, column=1, padx=8, pady=(0, 14), sticky="ew")
 
         log_frame = ctk.CTkFrame(self)
         log_frame.grid(row=3, column=0, padx=28, pady=8, sticky="nsew")
@@ -96,7 +100,9 @@ class OrganizadorApp(ctk.CTk):
         self.barra.set(0)
         self.barra.grid(row=0, column=0, padx=(0, 14), sticky="ew")
         self.iniciar_btn = ctk.CTkButton(rodape, text="Iniciar Organização", height=38, command=self._iniciar)
-        self.iniciar_btn.grid(row=0, column=1)
+        self.iniciar_btn.grid(row=0, column=1, padx=(0, 8))
+        self.cancelar_btn = ctk.CTkButton(rodape, text="Cancelar", height=38, state="disabled", command=self._cancelar)
+        self.cancelar_btn.grid(row=0, column=2)
 
     def _procurar_pasta(self):
         pasta = filedialog.askdirectory(title="Selecione a pasta para organizar")
@@ -112,7 +118,7 @@ class OrganizadorApp(ctk.CTk):
     def _salvar_chave(self):
         chave = self.chave_var.get().strip()
         if chave:
-            set_key(str(Path(__file__).with_name(".env")), "GROQ_API_KEY", chave)
+            set_key(str(organizador.CAMINHO_ENV), "GROQ_API_KEY", chave)
             os.environ["GROQ_API_KEY"] = chave
 
     def _iniciar(self):
@@ -126,18 +132,33 @@ class OrganizadorApp(ctk.CTk):
         if self.ia_var.get() and not self.chave_var.get().strip():
             messagebox.showwarning("Chave ausente", "Informe a GROQ_API_KEY ou desative os resumos com IA.")
             return
+        max_files = None
+        if self.max_files_var.get().strip():
+            try:
+                max_files = int(self.max_files_var.get())
+                if max_files < 1:
+                    raise ValueError
+            except ValueError:
+                messagebox.showwarning("Limite inválido", "O máximo de arquivos deve ser um número maior que zero.")
+                return
+        arquivos = [item for item in Path(pasta).iterdir() if item.is_file() and item.name not in organizador.ARQUIVOS_INTERNOS]
+        quantidade = min(len(arquivos), max_files) if max_files else len(arquivos)
+        if not messagebox.askyesno("Confirmar organização", f"Serão processados {quantidade} arquivo(s). Deseja continuar?"):
+            return
 
         self._salvar_chave()
         self._adicionar_log("Iniciando organização...\n")
         self.progresso = 0.0
         self.barra.set(0)
         self.iniciar_btn.configure(state="disabled", text="Processando...")
-        configuracoes = (self.teste_var.get(), not self.ia_var.get(), self.modelo_var.get())
+        self.cancelar_btn.configure(state="normal")
+        self.cancelamento.clear()
+        configuracoes = (self.teste_var.get(), not self.ia_var.get(), self.modelo_var.get(), max_files)
         thread = threading.Thread(target=self._executar, args=(pasta, configuracoes), daemon=True)
         thread.start()
 
     def _executar(self, pasta, configuracoes):
-        dry_run, no_ai, modelo = configuracoes
+        dry_run, no_ai, modelo, max_files = configuracoes
         console_anterior = organizador.console
         organizador.console = Console(file=LogWriter(self.eventos), no_color=True, force_terminal=False)
         try:
@@ -146,13 +167,22 @@ class OrganizadorApp(ctk.CTk):
                 dry_run=dry_run,
                 no_ai=no_ai,
                 model=modelo,
+                max_files=max_files,
                 progresso=lambda valor: self.eventos.put(("progresso", valor)),
+                cancel_event=self.cancelamento,
             )
             self.eventos.put(("fim", "Organização concluída."))
+        except organizador.OperacaoCancelada:
+            self.eventos.put(("cancelado", "Operação cancelada."))
         except Exception as erro:
             self.eventos.put(("erro", str(erro)))
         finally:
             organizador.console = console_anterior
+
+    def _cancelar(self):
+        self.cancelamento.set()
+        self.cancelar_btn.configure(state="disabled")
+        self._adicionar_log("Cancelamento solicitado; aguardando a etapa atual terminar...")
 
     def _processar_eventos(self):
         try:
@@ -167,9 +197,15 @@ class OrganizadorApp(ctk.CTk):
                     self.barra.set(1)
                     self._adicionar_log("\n" + valor)
                     self.iniciar_btn.configure(state="normal", text="Iniciar Organização")
+                    self.cancelar_btn.configure(state="disabled")
+                elif tipo == "cancelado":
+                    self._adicionar_log("\n" + valor)
+                    self.iniciar_btn.configure(state="normal", text="Iniciar Organização")
+                    self.cancelar_btn.configure(state="disabled")
                 elif tipo == "erro":
                     self._adicionar_log("\nERRO: " + valor)
                     self.iniciar_btn.configure(state="normal", text="Iniciar Organização")
+                    self.cancelar_btn.configure(state="disabled")
                     messagebox.showerror("Erro na organização", valor)
         except queue.Empty:
             pass

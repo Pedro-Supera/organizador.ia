@@ -18,6 +18,12 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 
 console = Console()
+ARQUIVOS_INTERNOS = {".env", ".gitignore", "contexto.txt", "organizador.py", "app.py"}
+CAMINHO_ENV = Path(__file__).with_name(".env")
+
+
+class OperacaoCancelada(Exception):
+    """Sinaliza o cancelamento solicitado pela interface gráfica."""
 
 CATEGORIAS = {
     "pdfs": [".pdf"],
@@ -78,7 +84,7 @@ def gerar_resumo(texto: str, nome_arquivo: str, model: str = "qwen/qwen3.6-27b",
     if not texto or len(texto) < 50:
         return "Texto muito curto ou vazio para gerar resumo."
 
-    load_dotenv()
+    load_dotenv(dotenv_path=CAMINHO_ENV)
     if client is None:
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
@@ -107,6 +113,10 @@ Texto:
             if tentativa < 2:
                 time.sleep(2 ** tentativa)
         except (APIConnectionError, APIStatusError) as erro:
+            status = getattr(erro, "status_code", None)
+            if status in {400, 401, 403, 404}:
+                console.print(f"[yellow]Falha permanente da API ao resumir {nome_arquivo}: {erro}[/yellow]")
+                return "Erro permanente da API ao gerar o resumo."
             if tentativa < 2:
                 time.sleep(2 ** tentativa)
             else:
@@ -135,12 +145,15 @@ def salvar_resumo(pasta_resumos: Path, nome_arquivo: str, resumo: str) -> None:
 
 def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = False,
                    model: str = "qwen/qwen3.6-27b", max_files: int | None = None,
-                   progresso=None) -> None:
+                   progresso=None, cancel_event=None) -> None:
     pasta = Path(caminho_pasta).expanduser().resolve()
     if not pasta.is_dir():
         raise ValueError(f"A pasta '{pasta}' não existe ou não é um diretório.")
 
-    arquivos = sorted((arquivo for arquivo in pasta.iterdir() if arquivo.is_file()), key=lambda item: item.name.lower())
+    arquivos = sorted(
+        (arquivo for arquivo in pasta.iterdir() if arquivo.is_file() and arquivo.name not in ARQUIVOS_INTERNOS),
+        key=lambda item: item.name.lower(),
+    )
     if max_files is not None:
         arquivos = arquivos[:max_files]
     if not arquivos:
@@ -156,6 +169,8 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
     with Progress(SpinnerColumn(), TextColumn("Lendo arquivos"), BarColumn(), TaskProgressColumn()) as progress:
         tarefa = progress.add_task("leitura", total=len(arquivos))
         for arquivo in arquivos:
+            if cancel_event and cancel_event.is_set():
+                raise OperacaoCancelada
             categoria = obter_categoria(arquivo.suffix)
             destino = proximo_destino(pasta / categoria / arquivo.name)
             while destino in usados:
@@ -169,6 +184,8 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
 
     movidos = 0
     for arquivo, categoria, destino, _ in planos:
+        if cancel_event and cancel_event.is_set():
+            raise OperacaoCancelada
         if dry_run:
             console.print(f"[cyan]SIMULAÇÃO[/cyan] {arquivo.name} -> {categoria}/{destino.name}")
         elif arquivo.parent != destino.parent or arquivo.name != destino.name:
@@ -187,7 +204,7 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
         if progresso:
             progresso(0.5)
     elif tarefas_ia:
-        load_dotenv()
+        load_dotenv(dotenv_path=CAMINHO_ENV)
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             console.print(Panel("GROQ_API_KEY não configurada; resumos de IA ignorados.", title="Atenção", style="yellow"))
