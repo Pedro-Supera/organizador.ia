@@ -4,10 +4,12 @@
 import argparse
 import os
 import shutil
+import threading
 import time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
+from typing import Any, Callable
 
 from dotenv import load_dotenv
 from groq import APIConnectionError, APIStatusError, Groq, RateLimitError
@@ -35,6 +37,7 @@ CATEGORIAS = {
 
 
 def obter_categoria(extensao: str) -> str:
+    """Retorna a categoria associada a uma extensão de arquivo."""
     extensao = extensao.lower()
     for categoria, extensoes in CATEGORIAS.items():
         if extensao in extensoes:
@@ -43,6 +46,7 @@ def obter_categoria(extensao: str) -> str:
 
 
 def extrair_texto_pdf(caminho: Path) -> str:
+    """Extrai o texto disponível em todas as páginas de um PDF."""
     try:
         reader = PdfReader(str(caminho))
         return "\n".join(pagina.extract_text() or "" for pagina in reader.pages).strip()
@@ -52,6 +56,7 @@ def extrair_texto_pdf(caminho: Path) -> str:
 
 
 def extrair_texto_txt(caminho: Path) -> str:
+    """Lê um TXT tentando UTF-8, ISO-8859-1 e Latin-1."""
     for encoding in ("utf-8", "iso-8859-1", "latin-1"):
         try:
             return caminho.read_text(encoding=encoding).strip()
@@ -64,6 +69,7 @@ def extrair_texto_txt(caminho: Path) -> str:
 
 
 def extrair_texto_docx(caminho: Path) -> str:
+    """Extrai o texto dos parágrafos de um documento DOCX."""
     try:
         from docx import Document
 
@@ -75,12 +81,19 @@ def extrair_texto_docx(caminho: Path) -> str:
 
 
 def extrair_texto(caminho: Path) -> str:
+    """Seleciona o extrator compatível com a extensão do arquivo."""
     extratores = {".pdf": extrair_texto_pdf, ".txt": extrair_texto_txt, ".docx": extrair_texto_docx}
     extrator = extratores.get(caminho.suffix.lower())
     return extrator(caminho) if extrator else ""
 
 
-def gerar_resumo(texto: str, nome_arquivo: str, model: str = "qwen/qwen3.6-27b", client=None) -> str:
+def gerar_resumo(
+    texto: str,
+    nome_arquivo: str,
+    model: str = "qwen/qwen3.6-27b",
+    client: Any | None = None,
+) -> str:
+    """Gera um resumo em português usando a API da Groq."""
     if not texto or len(texto) < 50:
         return "Texto muito curto ou vazio para gerar resumo."
 
@@ -128,6 +141,7 @@ Texto:
 
 
 def proximo_destino(destino: Path) -> Path:
+    """Retorna um destino livre, adicionando sufixo numérico se necessário."""
     if not destino.exists():
         return destino
     contador = 1
@@ -139,13 +153,16 @@ def proximo_destino(destino: Path) -> Path:
 
 
 def salvar_resumo(pasta_resumos: Path, nome_arquivo: str, resumo: str) -> None:
+    """Salva um resumo Markdown sem sobrescrever outro resumo existente."""
     destino = proximo_destino(pasta_resumos / f"resumo_{Path(nome_arquivo).stem}.md")
     destino.write_text(f"# Resumo de {nome_arquivo}\n\n{resumo}\n", encoding="utf-8")
 
 
 def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = False,
                    model: str = "qwen/qwen3.6-27b", max_files: int | None = None,
-                   progresso=None, cancel_event=None) -> None:
+                   progresso: Callable[[float], None] | None = None,
+                   cancel_event: threading.Event | None = None) -> None:
+    """Organiza os arquivos de uma pasta e gera resumos opcionalmente."""
     pasta = Path(caminho_pasta).expanduser().resolve()
     if not pasta.is_dir():
         raise ValueError(f"A pasta '{pasta}' não existe ou não é um diretório.")
@@ -239,6 +256,7 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
 
 
 def construir_parser() -> argparse.ArgumentParser:
+    """Cria o parser de argumentos da interface de linha de comando."""
     parser = argparse.ArgumentParser(description="Organiza arquivos e cria resumos com a Groq.")
     parser.add_argument("caminho", help="Pasta que será organizada")
     parser.add_argument("-d", "--dry-run", action="store_true", help="Simula a operação sem alterar arquivos")
@@ -249,6 +267,7 @@ def construir_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
+    """Executa a interface de linha de comando e retorna o código de saída."""
     args = construir_parser().parse_args()
     if args.max_files is not None and args.max_files < 1:
         raise SystemExit("--max-files deve ser maior que zero")

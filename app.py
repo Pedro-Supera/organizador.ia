@@ -4,29 +4,35 @@
 import os
 import queue
 import threading
+import webbrowser
 from pathlib import Path
+from tkinter import filedialog, messagebox
+from typing import Any
 
 import customtkinter as ctk
 from dotenv import load_dotenv, set_key
-from tkinter import filedialog, messagebox
 from rich.console import Console
 
 import organizador
 
 
 class LogWriter:
-    def __init__(self, eventos):
+    """Redireciona a saída do Rich para a fila de eventos da GUI."""
+
+    def __init__(self, eventos: queue.Queue[tuple[str, Any]]) -> None:
         self.eventos = eventos
 
-    def write(self, texto):
+    def write(self, texto: str) -> None:
         if texto.strip():
             self.eventos.put(("log", texto.rstrip()))
 
-    def flush(self):
+    def flush(self) -> None:
         pass
 
 
 class OrganizadorApp(ctk.CTk):
+    """Janela principal do organizador de arquivos."""
+
     MODELOS = [
         "qwen/qwen3.6-27b",
         "openai/gpt-oss-120b",
@@ -34,7 +40,7 @@ class OrganizadorApp(ctk.CTk):
         "groq/compound",
     ]
 
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__()
         self.title("Organizador Inteligente")
         self.geometry("880x680")
@@ -55,7 +61,7 @@ class OrganizadorApp(ctk.CTk):
         self._criar_interface()
         self.after(100, self._processar_eventos)
 
-    def _criar_interface(self):
+    def _criar_interface(self) -> None:
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(3, weight=1)
 
@@ -75,15 +81,16 @@ class OrganizadorApp(ctk.CTk):
         opcoes = ctk.CTkFrame(self)
         opcoes.grid(row=2, column=0, padx=28, pady=8, sticky="ew")
         opcoes.grid_columnconfigure(1, weight=1)
-        ctk.CTkLabel(opcoes, text="Configurações", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=3, padx=16, pady=(14, 8), sticky="w")
+        ctk.CTkLabel(opcoes, text="Configurações", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=4, padx=16, pady=(14, 8), sticky="w")
         ctk.CTkLabel(opcoes, text="Chave Groq").grid(row=1, column=0, padx=(16, 8), pady=6, sticky="w")
         ctk.CTkEntry(opcoes, textvariable=self.chave_var, show="*").grid(row=1, column=1, padx=8, pady=6, sticky="ew")
-        ctk.CTkSwitch(opcoes, text="Ativar resumos com IA", variable=self.ia_var).grid(row=1, column=2, padx=(8, 16), pady=6, sticky="w")
+        ctk.CTkButton(opcoes, text="Obter Chave Grátis", width=150, command=self._abrir_chaves_groq).grid(row=1, column=2, padx=8, pady=6)
+        ctk.CTkSwitch(opcoes, text="Ativar resumos com IA", variable=self.ia_var).grid(row=1, column=3, padx=(8, 16), pady=6, sticky="w")
         ctk.CTkLabel(opcoes, text="Modelo").grid(row=2, column=0, padx=(16, 8), pady=(6, 14), sticky="w")
-        ctk.CTkComboBox(opcoes, variable=self.modelo_var, values=self.MODELOS).grid(row=2, column=1, padx=8, pady=(6, 14), sticky="ew")
-        ctk.CTkCheckBox(opcoes, text="Modo Teste / Dry Run", variable=self.teste_var).grid(row=2, column=2, padx=(8, 16), pady=(6, 14), sticky="w")
+        ctk.CTkComboBox(opcoes, variable=self.modelo_var, values=self.MODELOS).grid(row=2, column=1, columnspan=2, padx=8, pady=(6, 14), sticky="ew")
+        ctk.CTkCheckBox(opcoes, text="Modo Teste / Dry Run", variable=self.teste_var).grid(row=2, column=3, padx=(8, 16), pady=(6, 14), sticky="w")
         ctk.CTkLabel(opcoes, text="Máximo de arquivos").grid(row=3, column=0, padx=(16, 8), pady=(0, 14), sticky="w")
-        ctk.CTkEntry(opcoes, textvariable=self.max_files_var, placeholder_text="Todos").grid(row=3, column=1, padx=8, pady=(0, 14), sticky="ew")
+        ctk.CTkEntry(opcoes, textvariable=self.max_files_var, placeholder_text="Todos").grid(row=3, column=1, columnspan=2, padx=8, pady=(0, 14), sticky="ew")
 
         log_frame = ctk.CTkFrame(self)
         log_frame.grid(row=3, column=0, padx=28, pady=8, sticky="nsew")
@@ -104,24 +111,35 @@ class OrganizadorApp(ctk.CTk):
         self.cancelar_btn = ctk.CTkButton(rodape, text="Cancelar", height=38, state="disabled", command=self._cancelar)
         self.cancelar_btn.grid(row=0, column=2)
 
-    def _procurar_pasta(self):
+    def _abrir_chaves_groq(self) -> None:
+        webbrowser.open_new_tab("https://console.groq.com/keys")
+
+    def _procurar_pasta(self) -> None:
         pasta = filedialog.askdirectory(title="Selecione a pasta para organizar")
         if pasta:
             self.pasta_var.set(pasta)
 
-    def _adicionar_log(self, texto):
+    def _adicionar_log(self, texto: str) -> None:
         self.log_box.configure(state="normal")
         self.log_box.insert("end", texto + "\n")
         self.log_box.see("end")
         self.log_box.configure(state="disabled")
 
-    def _salvar_chave(self):
+    def _salvar_chave(self) -> bool:
         chave = self.chave_var.get().strip()
-        if chave:
+        if not chave:
+            return True
+        try:
             set_key(str(organizador.CAMINHO_ENV), "GROQ_API_KEY", chave)
             os.environ["GROQ_API_KEY"] = chave
+        except OSError as erro:
+            mensagem = f"Não foi possível salvar a chave no arquivo .env: {erro}"
+            self._adicionar_log(mensagem)
+            messagebox.showerror("Falha ao salvar chave", mensagem)
+            return False
+        return True
 
-    def _iniciar(self):
+    def _iniciar(self) -> None:
         pasta = self.pasta_var.get().strip()
         if not pasta:
             messagebox.showwarning("Pasta não selecionada", "Escolha uma pasta antes de iniciar.")
@@ -146,7 +164,8 @@ class OrganizadorApp(ctk.CTk):
         if not messagebox.askyesno("Confirmar organização", f"Serão processados {quantidade} arquivo(s). Deseja continuar?"):
             return
 
-        self._salvar_chave()
+        if not self._salvar_chave():
+            return
         self._adicionar_log("Iniciando organização...\n")
         self.progresso = 0.0
         self.barra.set(0)
@@ -157,7 +176,7 @@ class OrganizadorApp(ctk.CTk):
         thread = threading.Thread(target=self._executar, args=(pasta, configuracoes), daemon=True)
         thread.start()
 
-    def _executar(self, pasta, configuracoes):
+    def _executar(self, pasta: str, configuracoes: tuple[bool, bool, str, int | None]) -> None:
         dry_run, no_ai, modelo, max_files = configuracoes
         console_anterior = organizador.console
         organizador.console = Console(file=LogWriter(self.eventos), no_color=True, force_terminal=False)
@@ -179,12 +198,12 @@ class OrganizadorApp(ctk.CTk):
         finally:
             organizador.console = console_anterior
 
-    def _cancelar(self):
+    def _cancelar(self) -> None:
         self.cancelamento.set()
         self.cancelar_btn.configure(state="disabled")
         self._adicionar_log("Cancelamento solicitado; aguardando a etapa atual terminar...")
 
-    def _processar_eventos(self):
+    def _processar_eventos(self) -> None:
         try:
             while True:
                 tipo, valor = self.eventos.get_nowait()
