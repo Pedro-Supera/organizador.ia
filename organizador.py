@@ -1,15 +1,17 @@
 #!/usr/bin/env python3
-"""Organiza arquivos e cria resumos opcionais com a API da Groq."""
+"""Núcleo de organização de arquivos e geração opcional de resumos."""
 
 import argparse
 import os
 import shutil
+import sys
 import threading
 import time
 from collections import Counter
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Protocol
 
 from dotenv import load_dotenv
 from groq import APIConnectionError, APIStatusError, Groq, RateLimitError
@@ -19,13 +21,9 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn, TextColumn
 from rich.table import Table
 
-console = Console()
+MODELO_PADRAO = "qwen/qwen3.6-27b"
+URL_CHAVES_GROQ = "https://console.groq.com/keys"
 ARQUIVOS_INTERNOS = {".env", ".gitignore", "contexto.txt", "organizador.py", "app.py"}
-CAMINHO_ENV = Path(__file__).with_name(".env")
-
-
-class OperacaoCancelada(Exception):
-    """Sinaliza o cancelamento solicitado pela interface gráfica."""
 
 CATEGORIAS = {
     "pdfs": [".pdf"],
@@ -36,26 +34,94 @@ CATEGORIAS = {
 }
 
 
+class Logger(Protocol):
+    """Contrato de saída usado pelo núcleo, pela CLI e pela GUI."""
+
+    def info(self, mensagem: str) -> None:
+        """Registra uma mensagem informativa."""
+
+    def warning(self, mensagem: str) -> None:
+        """Registra um alerta."""
+
+    def error(self, mensagem: str) -> None:
+        """Registra um erro."""
+
+
+class RichLogger:
+    """Implementa o logger do núcleo usando o Rich."""
+
+    def __init__(self, console: Console | None = None) -> None:
+        self.console = console or Console()
+
+    def info(self, mensagem: str) -> None:
+        self.console.print(mensagem)
+
+    def warning(self, mensagem: str) -> None:
+        self.console.print(f"[yellow]{mensagem}[/yellow]")
+
+    def error(self, mensagem: str) -> None:
+        self.console.print(f"[red]{mensagem}[/red]")
+
+
+class OperacaoCancelada(Exception):
+    """Sinaliza o cancelamento solicitado pela interface."""
+
+
+def caminho_base() -> Path:
+    """Retorna a pasta do script ou do executável empacotado."""
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+def caminhos_env() -> tuple[Path, Path]:
+    """Retorna os caminhos principal e alternativo para configuração da API."""
+    principal = caminho_base() / ".env"
+    alternativo = Path.home() / ".config" / "organizador-ia" / ".env"
+    return principal, alternativo
+
+
+def caminho_env_gravavel() -> Path:
+    """Retorna o caminho de configuração com permissão de escrita disponível."""
+    principal, alternativo = caminhos_env()
+    try:
+        principal.parent.mkdir(parents=True, exist_ok=True)
+        if not principal.exists():
+            principal.touch()
+        if os.access(principal, os.W_OK):
+            return principal
+    except OSError:
+        pass
+    alternativo.parent.mkdir(parents=True, exist_ok=True)
+    return alternativo
+
+
+def carregar_ambiente() -> Path | None:
+    """Carrega o primeiro `.env` disponível e retorna seu caminho."""
+    for caminho in caminhos_env():
+        if caminho.is_file():
+            load_dotenv(dotenv_path=caminho)
+            return caminho
+    return None
+
+
 def obter_categoria(extensao: str) -> str:
-    """Retorna a categoria associada a uma extensão de arquivo."""
+    """Retorna a categoria associada a uma extensão."""
     extensao = extensao.lower()
-    for categoria, extensoes in CATEGORIAS.items():
-        if extensao in extensoes:
-            return categoria
-    return "outros"
+    return next((categoria for categoria, extensoes in CATEGORIAS.items() if extensao in extensoes), "outros")
 
 
-def extrair_texto_pdf(caminho: Path) -> str:
+def extrair_texto_pdf(caminho: Path, logger: Logger | None = None) -> str:
     """Extrai o texto disponível em todas as páginas de um PDF."""
     try:
         reader = PdfReader(str(caminho))
         return "\n".join(pagina.extract_text() or "" for pagina in reader.pages).strip()
     except Exception as erro:
-        console.print(f"[yellow]Não foi possível ler o PDF {caminho.name}: {erro}[/yellow]")
+        (logger or RichLogger()).warning(f"Não foi possível ler o PDF {caminho.name}: {erro}")
         return ""
 
 
-def extrair_texto_txt(caminho: Path) -> str:
+def extrair_texto_txt(caminho: Path, logger: Logger | None = None) -> str:
     """Lê um TXT tentando UTF-8, ISO-8859-1 e Latin-1."""
     for encoding in ("utf-8", "iso-8859-1", "latin-1"):
         try:
@@ -63,63 +129,54 @@ def extrair_texto_txt(caminho: Path) -> str:
         except UnicodeDecodeError:
             continue
         except OSError as erro:
-            console.print(f"[yellow]Não foi possível ler o TXT {caminho.name}: {erro}[/yellow]")
+            (logger or RichLogger()).warning(f"Não foi possível ler o TXT {caminho.name}: {erro}")
             return ""
     return ""
 
 
-def extrair_texto_docx(caminho: Path) -> str:
-    """Extrai o texto dos parágrafos de um documento DOCX."""
+def extrair_texto_docx(caminho: Path, logger: Logger | None = None) -> str:
+    """Extrai o texto dos parágrafos de um DOCX."""
     try:
         from docx import Document
 
         documento = Document(str(caminho))
         return "\n".join(paragrafo.text for paragrafo in documento.paragraphs).strip()
     except Exception as erro:
-        console.print(f"[yellow]Não foi possível ler o DOCX {caminho.name}: {erro}[/yellow]")
+        (logger or RichLogger()).warning(f"Não foi possível ler o DOCX {caminho.name}: {erro}")
         return ""
 
 
-def extrair_texto(caminho: Path) -> str:
-    """Seleciona o extrator compatível com a extensão do arquivo."""
-    extratores = {".pdf": extrair_texto_pdf, ".txt": extrair_texto_txt, ".docx": extrair_texto_docx}
+def extrair_texto(caminho: Path, logger: Logger | None = None) -> str:
+    """Seleciona o extrator compatível com a extensão."""
+    extratores: dict[str, Callable[[Path, Logger | None], str]] = {
+        ".pdf": extrair_texto_pdf,
+        ".txt": extrair_texto_txt,
+        ".docx": extrair_texto_docx,
+    }
     extrator = extratores.get(caminho.suffix.lower())
-    return extrator(caminho) if extrator else ""
+    return extrator(caminho, logger) if extrator else ""
 
 
-def gerar_resumo(
-    texto: str,
-    nome_arquivo: str,
-    model: str = "qwen/qwen3.6-27b",
-    client: Any | None = None,
-) -> str:
+def gerar_resumo(texto: str, nome_arquivo: str, model: str = MODELO_PADRAO,
+                 client: Any | None = None, logger: Logger | None = None) -> str:
     """Gera um resumo em português usando a API da Groq."""
     if not texto or len(texto) < 50:
         return "Texto muito curto ou vazio para gerar resumo."
-
-    load_dotenv(dotenv_path=CAMINHO_ENV)
+    carregar_ambiente()
     if client is None:
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             return "IA desativada: GROQ_API_KEY não configurada."
         client = Groq(api_key=api_key)
-
-    prompt = f"""Faça um resumo em português do texto abaixo em no máximo 5 linhas.
-Seja claro e objetivo.
-
-Texto:
-{texto[:6000]}
-"""
+    prompt = f"Faça um resumo em português do texto abaixo em no máximo 5 linhas.\nSeja claro e objetivo.\n\nTexto:\n{texto[:6000]}"
     for tentativa in range(3):
         try:
             resposta = client.chat.completions.create(
                 model=model,
                 messages=[
-                    {"role": "system", "content": "Você é um assistente que cria resumos curtos e claros em português."},
+                    {"role": "system", "content": "Você cria resumos curtos e claros em português."},
                     {"role": "user", "content": prompt},
-                ],
-                temperature=0.3,
-                max_tokens=300,
+                ], temperature=0.3, max_tokens=300,
             )
             return (resposta.choices[0].message.content or "").strip()
         except RateLimitError:
@@ -128,14 +185,14 @@ Texto:
         except (APIConnectionError, APIStatusError) as erro:
             status = getattr(erro, "status_code", None)
             if status in {400, 401, 403, 404}:
-                console.print(f"[yellow]Falha permanente da API ao resumir {nome_arquivo}: {erro}[/yellow]")
+                (logger or RichLogger()).error(f"Falha permanente da API ao resumir {nome_arquivo}: {erro}")
                 return "Erro permanente da API ao gerar o resumo."
             if tentativa < 2:
                 time.sleep(2 ** tentativa)
             else:
-                console.print(f"[yellow]Falha da API ao resumir {nome_arquivo}: {erro}[/yellow]")
+                (logger or RichLogger()).warning(f"Falha da API ao resumir {nome_arquivo}: {erro}")
         except Exception as erro:
-            console.print(f"[yellow]Erro ao gerar resumo de {nome_arquivo}: {erro}[/yellow]")
+            (logger or RichLogger()).warning(f"Erro ao gerar resumo de {nome_arquivo}: {erro}")
             break
     return "Erro ao gerar resumo com a IA."
 
@@ -145,136 +202,117 @@ def proximo_destino(destino: Path) -> Path:
     if not destino.exists():
         return destino
     contador = 1
-    while True:
-        candidato = destino.with_name(f"{destino.stem}_{contador}{destino.suffix}")
-        if not candidato.exists():
-            return candidato
+    while (candidato := destino.with_name(f"{destino.stem}_{contador}{destino.suffix}")).exists():
         contador += 1
+    return candidato
 
 
 def salvar_resumo(pasta_resumos: Path, nome_arquivo: str, resumo: str) -> None:
-    """Salva um resumo Markdown sem sobrescrever outro resumo existente."""
+    """Salva um resumo Markdown sem sobrescrever outro existente."""
     destino = proximo_destino(pasta_resumos / f"resumo_{Path(nome_arquivo).stem}.md")
     destino.write_text(f"# Resumo de {nome_arquivo}\n\n{resumo}\n", encoding="utf-8")
 
 
 def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = False,
-                   model: str = "qwen/qwen3.6-27b", max_files: int | None = None,
-                   progresso: Callable[[float], None] | None = None,
+                   model: str = MODELO_PADRAO, max_files: int | None = None,
+                   logger: Logger | None = None, progresso: Callable[[float], None] | None = None,
                    cancel_event: threading.Event | None = None) -> None:
-    """Organiza os arquivos de uma pasta e gera resumos opcionalmente."""
+    """Organiza uma pasta e gera resumos opcionalmente."""
+    logger = logger or RichLogger()
     pasta = Path(caminho_pasta).expanduser().resolve()
     if not pasta.is_dir():
         raise ValueError(f"A pasta '{pasta}' não existe ou não é um diretório.")
-
-    arquivos = sorted(
-        (arquivo for arquivo in pasta.iterdir() if arquivo.is_file() and arquivo.name not in ARQUIVOS_INTERNOS),
-        key=lambda item: item.name.lower(),
-    )
+    arquivos = sorted((item for item in pasta.iterdir() if item.is_file() and item.name not in ARQUIVOS_INTERNOS), key=lambda item: item.name.lower())
     if max_files is not None:
         arquivos = arquivos[:max_files]
     if not arquivos:
-        console.print(Panel("Nenhum arquivo encontrado para organizar.", style="yellow"))
+        logger.warning("Nenhum arquivo encontrado para organizar.")
         return
-
     pasta_resumos = pasta / "resumos"
     if not dry_run:
         pasta_resumos.mkdir(exist_ok=True)
-
-    planos = []
-    usados = set()
-    with Progress(SpinnerColumn(), TextColumn("Lendo arquivos"), BarColumn(), TaskProgressColumn()) as progress:
-        tarefa = progress.add_task("leitura", total=len(arquivos))
-        for arquivo in arquivos:
-            if cancel_event and cancel_event.is_set():
-                raise OperacaoCancelada
-            categoria = obter_categoria(arquivo.suffix)
-            destino = proximo_destino(pasta / categoria / arquivo.name)
-            while destino in usados:
-                destino = proximo_destino(destino)
-            usados.add(destino)
-            texto = extrair_texto(arquivo) if arquivo.suffix.lower() in {".pdf", ".txt", ".docx"} else ""
-            planos.append((arquivo, categoria, destino, texto))
-            progress.advance(tarefa)
-            if progresso:
-                progresso(1 / (len(arquivos) * 2))
-
+    planos: list[tuple[Path, str, Path, str]] = []
+    usados: set[Path] = set()
+    for indice, arquivo in enumerate(arquivos, 1):
+        if cancel_event and cancel_event.is_set():
+            raise OperacaoCancelada
+        categoria = obter_categoria(arquivo.suffix)
+        destino = proximo_destino(pasta / categoria / arquivo.name)
+        while destino in usados:
+            destino = proximo_destino(destino)
+        usados.add(destino)
+        texto = extrair_texto(arquivo, logger) if arquivo.suffix.lower() in {".pdf", ".txt", ".docx"} else ""
+        planos.append((arquivo, categoria, destino, texto))
+        if progresso:
+            progresso(indice / (len(arquivos) * 2))
     movidos = 0
     for arquivo, categoria, destino, _ in planos:
         if cancel_event and cancel_event.is_set():
             raise OperacaoCancelada
         if dry_run:
-            console.print(f"[cyan]SIMULAÇÃO[/cyan] {arquivo.name} -> {categoria}/{destino.name}")
+            logger.info(f"SIMULAÇÃO {arquivo.name} -> {categoria}/{destino.name}")
         elif arquivo.parent != destino.parent or arquivo.name != destino.name:
             try:
                 destino.parent.mkdir(exist_ok=True)
                 shutil.move(str(arquivo), str(destino))
                 movidos += 1
+                logger.info(f"Movido: {arquivo.name} -> {categoria}/{destino.name}")
             except OSError as erro:
-                console.print(f"[red]Falha ao mover {arquivo.name}: {erro}[/red]")
-
-    resumos = set()
+                logger.error(f"Falha ao mover {arquivo.name}: {erro}")
+    resumos: set[str] = set()
     tarefas_ia = [(arquivo, texto) for arquivo, _, _, texto in planos if texto and not no_ai]
     if tarefas_ia and dry_run:
         for arquivo, _ in tarefas_ia:
-            console.print(f"[cyan]SIMULAÇÃO[/cyan] gerar resumo para {arquivo.name}")
+            logger.info(f"SIMULAÇÃO gerar resumo para {arquivo.name}")
         if progresso:
             progresso(0.5)
     elif tarefas_ia:
-        load_dotenv(dotenv_path=CAMINHO_ENV)
+        carregar_ambiente()
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
-            console.print(Panel("GROQ_API_KEY não configurada; resumos de IA ignorados.", title="Atenção", style="yellow"))
+            logger.warning("GROQ_API_KEY não configurada; resumos de IA ignorados.")
             if progresso:
                 progresso(0.5)
         else:
             client = Groq(api_key=api_key)
             with ThreadPoolExecutor(max_workers=min(8, len(tarefas_ia))) as executor:
-                futuros = {executor.submit(gerar_resumo, texto, arquivo.name, model, client): arquivo for arquivo, texto in tarefas_ia}
-                with Progress(SpinnerColumn(), TextColumn("Gerando resumos"), BarColumn(), TaskProgressColumn()) as progress:
-                    tarefa = progress.add_task("IA", total=len(futuros))
-                    for futuro in as_completed(futuros):
-                        arquivo = futuros[futuro]
-                        salvar_resumo(pasta_resumos, arquivo.name, futuro.result())
-                        resumos.add(arquivo.name)
-                        progress.advance(tarefa)
-                        if progresso:
-                            progresso(1 / (len(tarefas_ia) * 2))
+                futuros = {executor.submit(gerar_resumo, texto, arquivo.name, model, client, logger): arquivo for arquivo, texto in tarefas_ia}
+                for indice, futuro in enumerate(as_completed(futuros), 1):
+                    if cancel_event and cancel_event.is_set():
+                        raise OperacaoCancelada
+                    arquivo = futuros[futuro]
+                    salvar_resumo(pasta_resumos, arquivo.name, futuro.result())
+                    resumos.add(arquivo.name)
+                    if progresso:
+                        progresso(indice / (len(tarefas_ia) * 2))
     elif progresso:
         progresso(0.5)
-
-    tabela = Table(title="Relatório da organização")
-    tabela.add_column("Categoria")
-    tabela.add_column("Arquivos", justify="right")
-    tabela.add_column("Resumos", justify="right")
     contagem = Counter(categoria for _, categoria, _, _ in planos)
+    logger.info(f"Concluído: {movidos} arquivo(s) movido(s); {len(resumos)} resumo(s) criado(s).")
     for categoria in sorted(contagem):
-        quantidade_resumos = sum(1 for arquivo, cat, _, _ in planos if cat == categoria and arquivo.name in resumos)
-        tabela.add_row(categoria, str(contagem[categoria]), str(quantidade_resumos))
-    console.print(tabela)
-    console.print(Panel(f"{movidos} arquivo(s) movido(s); {len(resumos)} resumo(s) criado(s).", title="Concluído", style="green"))
+        logger.info(f"{categoria}: {contagem[categoria]} arquivo(s), {sum(1 for arquivo, cat, _, _ in planos if cat == categoria and arquivo.name in resumos)} resumo(s)")
 
 
 def construir_parser() -> argparse.ArgumentParser:
-    """Cria o parser de argumentos da interface de linha de comando."""
+    """Cria o parser da interface de linha de comando."""
     parser = argparse.ArgumentParser(description="Organiza arquivos e cria resumos com a Groq.")
     parser.add_argument("caminho", help="Pasta que será organizada")
     parser.add_argument("-d", "--dry-run", action="store_true", help="Simula a operação sem alterar arquivos")
     parser.add_argument("--no-ai", action="store_true", help="Desativa a geração de resumos com IA")
-    parser.add_argument("--model", default="qwen/qwen3.6-27b", help="Modelo da Groq usado nos resumos")
+    parser.add_argument("--model", default=MODELO_PADRAO, help="Modelo da Groq usado nos resumos")
     parser.add_argument("--max-files", type=int, help="Limita a quantidade de arquivos processados")
     return parser
 
 
 def main() -> int:
-    """Executa a interface de linha de comando e retorna o código de saída."""
+    """Executa a interface de linha de comando."""
     args = construir_parser().parse_args()
     if args.max_files is not None and args.max_files < 1:
         raise SystemExit("--max-files deve ser maior que zero")
     try:
         organizar_pasta(args.caminho, args.dry_run, args.no_ai, args.model, args.max_files)
     except ValueError as erro:
-        console.print(Panel(str(erro), title="Erro", style="red"))
+        RichLogger().error(str(erro))
         return 1
     return 0
 
