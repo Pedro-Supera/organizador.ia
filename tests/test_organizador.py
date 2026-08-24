@@ -1,5 +1,7 @@
 from pathlib import Path
+import warnings
 
+import app
 import organizador
 
 
@@ -90,3 +92,80 @@ def test_falha_de_io_ao_mover_e_registrada(tmp_path, monkeypatch):
     organizador.organizar_pasta(tmp_path, no_ai=True, logger=logger)
 
     assert any("somente leitura" in mensagem for nivel, mensagem in logger.mensagens if nivel == "error")
+
+
+def test_cancelar_futuros_solicita_cancelamento():
+    class Futuro:
+        def __init__(self):
+            self.cancelado = False
+
+        def cancel(self):
+            self.cancelado = True
+
+    futuros = [Futuro(), Futuro()]
+    organizador.cancelar_futuros(futuros)
+
+    assert all(futuro.cancelado for futuro in futuros)
+
+
+def test_pdf_escaneado_gera_alerta(tmp_path, monkeypatch):
+    class Pagina:
+        def extract_text(self):
+            return ""
+
+    class Leitor:
+        pages = [Pagina()]
+
+    logger = LoggerDeTeste()
+    caminho = tmp_path / "scan.pdf"
+    caminho.write_bytes(b"0" * (51 * 1024))
+    monkeypatch.setattr(organizador, "PdfReader", lambda _: Leitor())
+
+    assert organizador.extrair_texto_pdf(caminho, logger) == ""
+    assert any("escaneado" in mensagem for _, mensagem in logger.mensagens)
+
+
+def test_novas_extensoes_de_texto(tmp_path):
+    html = tmp_path / "pagina.html"
+    csv = tmp_path / "dados.csv"
+    html.write_text("<h1>Título</h1><p>Conteúdo</p>", encoding="utf-8")
+    csv.write_text("nome,valor\nproduto,10", encoding="utf-8")
+
+    assert organizador.extrair_texto(html) == "Título Conteúdo"
+    assert organizador.extrair_texto(csv) == "nome | valor\nproduto | 10"
+
+
+def test_sanitizacao_de_max_files():
+    assert app.validar_max_files(" 12 ") == 12
+    assert app.validar_max_files(" ") is None
+    for valor in ("0", "-1", "abc"):
+        try:
+            app.validar_max_files(valor)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Valor inválido foi aceito")
+
+
+def test_log_pode_ser_limpo_e_exportado(tmp_path, monkeypatch):
+    janela = app.ctk.CTk()
+    try:
+        log = app.ConsoleLogFrame(janela)
+        log.adicionar("[12:00:00] INFO: teste")
+        log.limpar()
+        assert log.caixa.get("1.0", "end-1c") == ""
+        destino = tmp_path / "log.txt"
+        monkeypatch.setattr(app.filedialog, "asksaveasfilename", lambda **_: str(destino))
+        log.adicionar("linha exportada")
+        log.exportar()
+        assert destino.read_text(encoding="utf-8").strip() == "linha exportada"
+    finally:
+        janela.destroy()
+
+
+def test_importacoes_nao_geram_deprecation_warning():
+    with warnings.catch_warnings(record=True) as capturados:
+        warnings.simplefilter("always", DeprecationWarning)
+        __import__("organizador")
+        __import__("app")
+    assert not [warning for warning in capturados if issubclass(warning.category, DeprecationWarning)]
