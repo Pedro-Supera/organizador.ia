@@ -3,6 +3,20 @@ from pathlib import Path
 import organizador
 
 
+class LoggerDeTeste:
+    def __init__(self):
+        self.mensagens = []
+
+    def info(self, mensagem):
+        self.mensagens.append(("info", mensagem))
+
+    def warning(self, mensagem):
+        self.mensagens.append(("warning", mensagem))
+
+    def error(self, mensagem):
+        self.mensagens.append(("error", mensagem))
+
+
 def test_obter_categoria_case_insensitive():
     assert organizador.obter_categoria(".DOCX") == "documentos"
     assert organizador.obter_categoria(".desconhecido") == "outros"
@@ -53,3 +67,26 @@ def test_max_files_limita_processamento(tmp_path):
 
     assert len(list((tmp_path / "documentos").iterdir())) == 2
     assert (tmp_path / "c.txt").exists()
+
+
+def test_logger_injetado_recebe_relatorio(tmp_path):
+    logger = LoggerDeTeste()
+    (tmp_path / "nota.txt").write_text("conteúdo", encoding="utf-8")
+
+    organizador.organizar_pasta(tmp_path, no_ai=True, logger=logger)
+
+    assert any("Concluído" in mensagem for _, mensagem in logger.mensagens)
+
+
+def test_falha_de_io_ao_mover_e_registrada(tmp_path, monkeypatch):
+    logger = LoggerDeTeste()
+    arquivo = tmp_path / "nota.txt"
+    arquivo.write_text("conteúdo", encoding="utf-8")
+
+    def mover_com_falha(*args):
+        raise OSError("disco somente leitura")
+
+    monkeypatch.setattr(organizador.shutil, "move", mover_com_falha)
+    organizador.organizar_pasta(tmp_path, no_ai=True, logger=logger)
+
+    assert any("somente leitura" in mensagem for nivel, mensagem in logger.mensagens if nivel == "error")
