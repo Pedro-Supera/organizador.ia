@@ -3,8 +3,11 @@
 
 import argparse
 import csv
+import hashlib
+import json
 import os
 import random
+import re
 import shutil
 import sys
 import threading
@@ -46,6 +49,13 @@ class Estatisticas(TypedDict):
     resumos_falha: int
     por_categoria: dict[str, int]
     destino: str
+    cache_hits: int
+    cache_misses: int
+    taxa_hits: float
+    taxa_misses: float
+    caracteres_salvos: int
+    tokens_salvos: int
+    tempo_estimado_segundos: float
 
 
 class Logger(Protocol):
@@ -126,6 +136,59 @@ def caminho_env_gravavel() -> Path:
         pass
     alternativo.parent.mkdir(parents=True, exist_ok=True)
     return alternativo
+
+
+def calcular_sha256(caminho_arquivo: Path, chunk_size: int = 65536) -> str:
+    """Calcula o hash SHA-256 de um arquivo em blocos."""
+    hash_arquivo = hashlib.sha256()
+    with caminho_arquivo.open("rb") as arquivo:
+        for bloco in iter(lambda: arquivo.read(chunk_size), b""):
+            hash_arquivo.update(bloco)
+    return hash_arquivo.hexdigest()
+
+
+def obter_caminho_cache(base_dir: str | Path | None = None) -> Path:
+    """Retorna o caminho do cache local de resumos para a pasta de trabalho."""
+    base = Path(base_dir).expanduser().resolve() if base_dir is not None else caminho_base()
+    caminho_local = base / ".cache_resumos.json"
+    try:
+        if os.access(caminho_local.parent, os.W_OK):
+            return caminho_local
+    except OSError:
+        pass
+
+    caminho_home = Path.home() / ".cache_resumos.json"
+    try:
+        if os.access(Path.home(), os.W_OK):
+            return caminho_home
+    except OSError:
+        pass
+    return caminho_local
+
+
+def carregar_cache(caminho_cache: Path) -> dict:
+    """Lê o arquivo JSON do cache, retornando dicionário vazio em caso de falha."""
+    try:
+        if not caminho_cache.exists():
+            return {}
+        with caminho_cache.open("r", encoding="utf-8") as arquivo:
+            dados = json.load(arquivo)
+        if isinstance(dados, dict):
+            return dados
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        return {}
+    return {}
+
+
+def salvar_cache(cache: dict, caminho_cache: Path) -> None:
+    """Persiste o cache em JSON com tratamento de erro de I/O."""
+    try:
+        caminho_cache.parent.mkdir(parents=True, exist_ok=True)
+        with caminho_cache.open("w", encoding="utf-8") as arquivo:
+            json.dump(cache, arquivo, ensure_ascii=False, indent=2, sort_keys=True)
+            arquivo.write("\n")
+    except OSError:
+        pass
 
 
 def carregar_ambiente() -> Path | None:
@@ -273,10 +336,28 @@ def extrair_texto(caminho: Path, logger: Logger | None = None) -> str:
     return (extrator(caminho, logger) if extrator else "")[:MAX_TEXTO_LEITURA]
 
 
+def anonimizar_texto_sensivel(texto: str) -> str:
+    """Substitui padrões sensíveis por marcadores protegidos."""
+    if not texto:
+        return ""
+
+    texto = re.sub(r"\b\d{3}\.\d{3}\.\d{3}-\d{2}\b", "[CPF_PROTEGIDO]", texto)
+    texto = re.sub(r"\b\d{11}\b", "[CPF_PROTEGIDO]", texto)
+    texto = re.sub(r"\b\d{2}\.\d{3}\.\d{3}/\d{4}-\d{2}\b", "[CNPJ_PROTEGIDO]", texto)
+    texto = re.sub(r"\b\d{14}\b", "[CNPJ_PROTEGIDO]", texto)
+    texto = re.sub(r"\b\d{1,2}\.\d{3}\.\d{3}-[0-9Xx]\b", "[RG_PROTEGIDO]", texto)
+    texto = re.sub(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", "[EMAIL_PROTEGIDO]", texto)
+    texto = re.sub(r"\b(?:api[_-]?key|token|secret|password|passwd|senha|chave)[\s:=]+[A-Za-z0-9._~:/+=-]{6,}\b", "[SEGREDO_PROTEGIDO]", texto, flags=re.IGNORECASE)
+    texto = re.sub(r"\b(?:\d{4}[ -]?){3}\d{4}\b", "[CARTAO_PROTEGIDO]", texto)
+    texto = re.sub(r"(?:(?:\+?55\s*)?(?:\(?\d{2}\)?\s*[-.]?)?\d{4,5}\s*[-.]?\d{4})\b", "[TELEFONE_PROTEGIDO]", texto)
+    texto = re.sub(r"\b(?:0?[1-9]|[12][0-9]|3[01])[-/](?:0?[1-9]|1[0-2])[-/](?:19|20)\d{2}\b", "[DATA_PROTEGIDA]", texto)
+    return texto
+
+
 def gerar_resumo(texto: str, nome_arquivo: str = "arquivo", model: str = MODELO_PADRAO,
                  client: Any | None = None, logger: Logger | None = None,
-                 api_key: str | None = None) -> str | None:
-    """Gera um resumo em português usando a API da Groq."""
+                 api_key: str | None = None, stream: bool = True) -> str | None:
+    """Gera um resumo em português usando a API da Groq, com suporte a streaming opcional."""
     if not texto or (len(texto) < 50 and api_key is None):
         return "Texto muito curto ou vazio para gerar resumo."
     carregar_ambiente()
@@ -286,23 +367,47 @@ def gerar_resumo(texto: str, nome_arquivo: str = "arquivo", model: str = MODELO_
             return "IA desativada: GROQ_API_KEY não configurada."
         client = Groq(api_key=chave)
     prompt = f"Faça um resumo em português do texto abaixo em no máximo 5 linhas.\nSeja claro e objetivo.\n\nTexto:\n{texto[:6000]}"
+    logger = logger or RichLogger()
     for tentativa in range(3):
+        parcial = ""
         try:
             resposta = client.chat.completions.create(
                 model=model,
                 messages=[
                     {"role": "system", "content": "Você cria resumos curtos e claros em português."},
                     {"role": "user", "content": prompt},
-                ], temperature=0.3, max_tokens=300,
+                ], temperature=0.3, max_tokens=300, stream=stream,
             )
-            return (resposta.choices[0].message.content or "").strip()
+            if stream and not hasattr(resposta, "choices") and hasattr(resposta, "__iter__"):
+                for chunk in resposta:
+                    if chunk is None:
+                        continue
+                    choices = getattr(chunk, "choices", [])
+                    if not choices:
+                        continue
+                    for item in choices:
+                        delta = getattr(item, "delta", None)
+                        conteudo = getattr(delta, "content", None) if delta is not None else None
+                        if conteudo:
+                            if isinstance(conteudo, str):
+                                pedaco = conteudo
+                            else:
+                                pedaco = "".join(str(part) for part in conteudo if part)
+                            if pedaco:
+                                parcial += pedaco
+                                logger.info(f"[stream] {pedaco}")
+                return parcial.strip() or "Resumo vazio durante streaming."
+            if hasattr(resposta, "choices") and getattr(resposta, "choices", None):
+                conteudo = getattr(resposta.choices[0].message, "content", None)
+                return (conteudo or "").strip()
+            return parcial.strip() or "Resumo vazio durante streaming."
         except RateLimitError:
             if tentativa < 2:
                 _aguardar_retry(tentativa)
         except (APIConnectionError, APIStatusError) as erro:
             status = getattr(erro, "status_code", None)
             if status in {400, 401, 403, 404}:
-                (logger or RichLogger()).error(f"Falha permanente da API ao resumir {nome_arquivo}: {erro}")
+                logger.error(f"Falha permanente da API ao resumir {nome_arquivo}: {erro}")
                 return "Erro permanente da API ao gerar o resumo."
             if status is None or status >= 500:
                 if tentativa < 2:
@@ -311,9 +416,9 @@ def gerar_resumo(texto: str, nome_arquivo: str = "arquivo", model: str = MODELO_
             if tentativa < 2:
                 _aguardar_retry(tentativa)
             else:
-                (logger or RichLogger()).warning(f"Falha da API ao resumir {nome_arquivo}: {erro}")
+                logger.warning(f"Falha da API ao resumir {nome_arquivo}: {erro}")
         except Exception as erro:
-            (logger or RichLogger()).warning(f"Erro ao gerar resumo de {nome_arquivo}: {erro}")
+            logger.warning(f"Erro ao gerar resumo de {nome_arquivo}: {erro}")
             if tentativa < 2:
                 _aguardar_retry(tentativa)
             else:
@@ -343,6 +448,45 @@ def salvar_resumo(pasta_resumos: Path, nome_arquivo: str, resumo: str) -> None:
     destino.write_text(f"# Resumo de {nome_arquivo}\n\n{resumo}\n", encoding="utf-8")
 
 
+def gerar_relatorio_geral_markdown(estatisticas: dict[str, Any] | None, caminho_pasta: str | Path) -> Path:
+    """Cria um relatório consolidado em Markdown para a operação completa."""
+    pasta = Path(caminho_pasta).expanduser().resolve()
+    pasta.mkdir(parents=True, exist_ok=True)
+    dados = estatisticas or {}
+    total_processados = dados.get("movidos", 0) + max(0, dados.get("cache_hits", 0) + dados.get("cache_misses", 0))
+    taxa_hits = dados.get("taxa_hits", 0.0)
+    taxa_misses = dados.get("taxa_misses", 0.0)
+    relatorio = pasta / "00_RELATORIO_ORGANIZACAO.md"
+    conteudo = f"""# Relatório de Organização
+
+- Pasta: `{pasta}`
+- Arquivos movidos: {dados.get('movidos', 0)}
+- Resumos com sucesso: {dados.get('resumos_sucesso', 0)}
+- Resumos com falha: {dados.get('resumos_falha', 0)}
+- Cache hits: {dados.get('cache_hits', 0)}
+- Cache misses: {dados.get('cache_misses', 0)}
+- Taxa de acerto: {taxa_hits:.2f}%
+- Taxa de miss: {taxa_misses:.2f}%
+- Caracteres salvos: {dados.get('caracteres_salvos', 0)}
+- Tokens estimados salvos: {dados.get('tokens_salvos', 0)}
+- Tempo estimado economizado: {dados.get('tempo_estimado_segundos', 0.0):.2f}s
+- Arquivos processados estimados: {total_processados}
+
+## Resumo executivo
+A operação foi concluída com {dados.get('movidos', 0)} movimentação(ões) de arquivos e {dados.get('resumos_sucesso', 0)} resumo(s) gerado(s) com sucesso.
+
+## Categorias
+"""
+    por_categoria = dados.get("por_categoria", {})
+    if por_categoria:
+        for categoria, quantidade in sorted(por_categoria.items()):
+            conteudo += f"- {categoria}: {quantidade}\n"
+    else:
+        conteudo += "- Nenhuma categoria processada.\n"
+    relatorio.write_text(conteudo, encoding="utf-8")
+    return relatorio
+
+
 def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = False,
                    model: str = MODELO_PADRAO, max_files: int | None = None,
                    logger: Logger | None = None, progresso: Callable[[float], None] | None = None,
@@ -354,14 +498,27 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
     arquivos = listar_arquivos_elegiveis(pasta, max_files)
     if not arquivos:
         logger.warning("Nenhum arquivo encontrado para organizar.")
-        resultado: Estatisticas = {"movidos": 0, "resumos_sucesso": 0, "resumos_falha": 0, "por_categoria": {}, "destino": str(pasta)}
+        resultado: Estatisticas = {
+            "movidos": 0,
+            "resumos_sucesso": 0,
+            "resumos_falha": 0,
+            "por_categoria": {},
+            "destino": str(pasta),
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "taxa_hits": 0.0,
+            "taxa_misses": 0.0,
+            "caracteres_salvos": 0,
+            "tokens_salvos": 0,
+            "tempo_estimado_segundos": 0.0,
+        }
         if estatisticas:
             estatisticas(resultado)
         return resultado
     pasta_resumos = pasta / "resumos"
     if not dry_run:
         pasta_resumos.mkdir(exist_ok=True)
-    planos: list[tuple[Path, str, Path, str]] = []
+    planos: list[tuple[Path, str, Path, str, str]] = []
     usados: set[Path] = set()
     for indice, arquivo in enumerate(arquivos, 1):
         if cancel_event and cancel_event.is_set():
@@ -375,11 +532,12 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
         usados.add(destino)
         extensoes_texto = {".pdf", ".txt", ".docx", ".pptx", ".html", ".csv"}
         texto = extrair_texto(arquivo, logger) if arquivo.suffix.lower() in extensoes_texto else ""
-        planos.append((arquivo, categoria, destino, texto))
+        sha256 = calcular_sha256(arquivo) if texto else ""
+        planos.append((arquivo, categoria, destino, texto, sha256))
         if progresso:
             progresso(indice / (len(arquivos) * 2))
     movidos = 0
-    for arquivo, categoria, destino, _ in planos:
+    for arquivo, categoria, destino, _, _ in planos:
         if cancel_event and cancel_event.is_set():
             raise OperacaoCancelada
         if dry_run:
@@ -394,9 +552,32 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
                 logger.error(f"Falha ao mover {arquivo.name}: {erro}")
     resumos: set[str] = set()
     resumos_falha = 0
-    tarefas_ia = [(arquivo, texto) for arquivo, _, _, texto in planos if texto and not no_ai]
+    cache_hits = 0
+    cache_misses = 0
+    caracteres_salvos = 0
+    caminho_cache = obter_caminho_cache(pasta)
+    cache = carregar_cache(caminho_cache)
+    tarefas_ia: list[tuple[Path, str, str]] = []
+    chaves_em_execucao: set[str] = set()
+    for arquivo, _, _, texto, sha256 in planos:
+        if not texto or no_ai:
+            continue
+        texto_sanitizado = anonimizar_texto_sensivel(texto)
+        chave_cache = f"{sha256}_{model}"
+        if chave_cache in cache and isinstance(cache[chave_cache], str):
+            resumo = cache[chave_cache]
+            salvar_resumo(pasta_resumos, arquivo.name, resumo)
+            resumos.add(arquivo.name)
+            cache_hits += 1
+            caracteres_salvos += len(texto_sanitizado)
+            continue
+        if chave_cache in chaves_em_execucao:
+            continue
+        chaves_em_execucao.add(chave_cache)
+        cache_misses += 1
+        tarefas_ia.append((arquivo, texto_sanitizado, chave_cache))
     if tarefas_ia and dry_run:
-        for arquivo, _ in tarefas_ia:
+        for arquivo, _, _ in tarefas_ia:
             nome_seguro = sanitizar_nome_caminho(Path(arquivo.name).stem)
             resumo_path = proximo_destino(pasta_resumos / f"resumo_{nome_seguro}.md")
             logger.info(f"[SIMULAÇÃO] Criaria resumo em {resumo_path}")
@@ -413,14 +594,19 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
             client = Groq(api_key=api_key)
             executor = ThreadPoolExecutor(max_workers=min(8, len(tarefas_ia)))
             try:
-                futuros = {executor.submit(gerar_resumo, texto, arquivo.name, model, client, logger): arquivo for arquivo, texto in tarefas_ia}
+                futuros = {
+                    executor.submit(gerar_resumo, texto, arquivo.name, model, client, logger, api_key): (arquivo, chave_cache)
+                    for arquivo, texto, chave_cache in tarefas_ia
+                }
                 for indice, futuro in enumerate(as_completed(futuros), 1):
                     if cancel_event and cancel_event.is_set():
                         cancelar_futuros(list(futuros))
                         raise OperacaoCancelada
-                    arquivo = futuros[futuro]
+                    arquivo, chave_cache = futuros[futuro]
                     resumo = futuro.result()
                     if resumo is not None:
+                        cache[chave_cache] = resumo
+                        salvar_cache(cache, caminho_cache)
                         salvar_resumo(pasta_resumos, arquivo.name, resumo)
                         resumos.add(arquivo.name)
                     if resumo is None or resumo.startswith("Erro"):
@@ -431,17 +617,30 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
                 executor.shutdown(wait=False, cancel_futures=True)
     elif progresso:
         progresso(0.5)
-    contagem = Counter(categoria for _, categoria, _, _ in planos)
+    contagem = Counter(categoria for _, categoria, _, _, _ in planos)
     logger.info(f"Concluído: {movidos} arquivo(s) movido(s); {len(resumos)} resumo(s) criado(s).")
     for categoria in sorted(contagem):
-        logger.info(f"{categoria}: {contagem[categoria]} arquivo(s), {sum(1 for arquivo, cat, _, _ in planos if cat == categoria and arquivo.name in resumos)} resumo(s)")
+        logger.info(f"{categoria}: {contagem[categoria]} arquivo(s), {sum(1 for arquivo, cat, _, _, _ in planos if cat == categoria and arquivo.name in resumos)} resumo(s)")
+    taxa_hits = (cache_hits / (cache_hits + cache_misses) * 100) if (cache_hits + cache_misses) else 0.0
+    taxa_misses = 100.0 - taxa_hits
+    tokens_salvos = max(0, caracteres_salvos // 4)
+    tempo_estimado_segundos = round((cache_hits * 0.35) + (caracteres_salvos / 5000), 2)
     resultado = {
         "movidos": movidos,
         "resumos_sucesso": len(resumos) - resumos_falha,
         "resumos_falha": resumos_falha,
         "por_categoria": dict(contagem),
         "destino": str(pasta),
+        "cache_hits": cache_hits,
+        "cache_misses": cache_misses,
+        "taxa_hits": taxa_hits,
+        "taxa_misses": taxa_misses,
+        "caracteres_salvos": caracteres_salvos,
+        "tokens_salvos": tokens_salvos,
+        "tempo_estimado_segundos": tempo_estimado_segundos,
     }
+    if not dry_run:
+        gerar_relatorio_geral_markdown(resultado, pasta)
     if estatisticas:
         estatisticas(resultado)
     return resultado

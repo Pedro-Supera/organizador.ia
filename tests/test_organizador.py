@@ -82,6 +82,85 @@ def test_gerar_resumo_sucesso(mock_groq):
     assert resultado == "Resumo simulado com sucesso"
 
 
+def test_calcular_sha256_mesmo_conteudo_mesmo_hash(tmp_path):
+    arquivo_1 = tmp_path / "arquivo_um.txt"
+    arquivo_2 = tmp_path / "arquivo_dois.txt"
+    conteudo = b"texto idntico para testar hash\n"
+    arquivo_1.write_bytes(conteudo)
+    arquivo_2.write_bytes(conteudo)
+
+    assert organizador.calcular_sha256(arquivo_1) == organizador.calcular_sha256(arquivo_2)
+
+
+def test_anonimizar_texto_sensivel_substitui_padroes():
+    texto = "CPF 123.456.789-09, email maria@example.com, tel (11) 99999-1234, cartao 4111 1111 1111 1111"
+
+    resultado = organizador.anonimizar_texto_sensivel(texto)
+
+    assert "[CPF_PROTEGIDO]" in resultado
+    assert "[EMAIL_PROTEGIDO]" in resultado
+    assert "[TELEFONE_PROTEGIDO]" in resultado
+    assert "[CARTAO_PROTEGIDO]" in resultado
+
+
+def test_anonimizar_texto_sensivel_expande_padroes():
+    texto = "CNPJ 12.345.678/0001-99, RG 12.345.678-X, senha api_key=abcd1234, data 12/03/1998"
+
+    resultado = organizador.anonimizar_texto_sensivel(texto)
+
+    assert "[CNPJ_PROTEGIDO]" in resultado
+    assert "[RG_PROTEGIDO]" in resultado
+    assert "[SEGREDO_PROTEGIDO]" in resultado
+    assert "[DATA_PROTEGIDA]" in resultado
+
+
+@patch("organizador.Groq")
+def test_gerar_resumo_streaming_reconstroi_texto(mock_groq):
+    class Parte:
+        def __init__(self, texto):
+            self.choices = [type("Item", (), {"delta": type("Delta", (), {"content": texto})()})()]
+
+    mock_groq.return_value.chat.completions.create.return_value = [Parte("Resumo "), Parte("streaming")]
+
+    resultado = organizador.gerar_resumo("Texto longo para streaming", api_key="chave_fake", stream=True)
+
+    assert "Resumo streaming" in resultado
+
+
+@patch("organizador.Groq")
+@patch("time.sleep")
+def test_gerar_resumo_streaming_recupera_apos_erro(mock_sleep, mock_groq):
+    class Parte:
+        def __init__(self, texto):
+            self.choices = [type("Item", (), {"delta": type("Delta", (), {"content": texto})()})()]
+
+    mock_groq.return_value.chat.completions.create.side_effect = [
+        RuntimeError("falha no stream"),
+        [Parte("Resumo "), Parte("recuperado")],
+    ]
+
+    resultado = organizador.gerar_resumo("Texto longo para recuperar", api_key="chave_fake", stream=True)
+
+    assert "Resumo recuperado" in resultado
+    assert mock_sleep.called
+
+
+@patch("organizador.Groq")
+def test_cache_evita_chamada_groq_duplicada(mock_groq, tmp_path, monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "chave-de-teste")
+    mock_groq.return_value.chat.completions.create.return_value.choices[0].message.content = "Resumo em cache"
+
+    arquivo_1 = tmp_path / "a.txt"
+    arquivo_2 = tmp_path / "b.txt"
+    conteudo = "Texto suficiente para gerar resumo com a IA. " * 5
+    arquivo_1.write_text(conteudo, encoding="utf-8")
+    arquivo_2.write_text(conteudo, encoding="utf-8")
+
+    organizador.organizar_pasta(tmp_path, model="modelo-teste")
+
+    assert mock_groq.call_count == 1
+
+
 @patch("organizador.Groq")
 @patch("time.sleep")
 def test_gerar_resumo_falha_persistente_com_retry(mock_sleep, mock_groq):
@@ -239,8 +318,33 @@ def test_fluxo_retorna_estatisticas_e_processa_csv(tmp_path):
 
     assert resultado["movidos"] == 1
     assert resultado["por_categoria"] == {"planilhas": 1}
+    assert "cache_hits" in resultado
+    assert "cache_misses" in resultado
     assert recebidos == [resultado]
     assert (tmp_path / "planilhas" / "dados.csv").exists()
+
+
+def test_gerar_relatorio_geral_markdown_cria_arquivo(tmp_path):
+    estatisticas = {
+        "movidos": 2,
+        "resumos_sucesso": 1,
+        "resumos_falha": 0,
+        "por_categoria": {"documentos": 2},
+        "destino": str(tmp_path),
+        "cache_hits": 1,
+        "cache_misses": 1,
+        "taxa_hits": 50.0,
+        "taxa_misses": 50.0,
+        "caracteres_salvos": 120,
+        "tokens_salvos": 30,
+        "tempo_estimado_segundos": 1.5,
+    }
+
+    relatorio = organizador.gerar_relatorio_geral_markdown(estatisticas, tmp_path)
+
+    assert relatorio.exists()
+    assert relatorio.name == "00_RELATORIO_ORGANIZACAO.md"
+    assert "Cache hits" in relatorio.read_text(encoding="utf-8")
 
 
 def test_sanitizacao_de_max_files():

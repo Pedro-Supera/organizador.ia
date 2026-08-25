@@ -1,70 +1,242 @@
+# Contexto do projeto: Organizador Inteligente
 
-# Organizador Inteligente
+## Visão geral
+Este projeto organiza arquivos por categoria e, opcionalmente, gera resumos em português com IA usando a Groq. O núcleo está em `organizador.py`, a interface em `app.py` e os testes em `tests/test_organizador.py`.
 
-## Objetivo
-Aplicacao Python que organiza arquivos de uma pasta por categoria e pode gerar resumos curtos em portugues usando a API da Groq.
+O sistema foi pensado para:
+- classificar arquivos por extensão e destino;
+- mover arquivos para pastas como documentos, PDFs, imagens, planilhas, compactados e outros;
+- extrair texto útil de arquivos suportados;
+- anonimizar dados sensíveis antes da chamada à IA;
+- reutilizar resumos em cache local para reduzir chamadas repetidas à API;
+- manter compatibilidade com uma suíte automatizada de regressão;
+- registrar métricas operacionais e gerar relatórios em Markdown.
 
-## Estrutura
-- `organizador.py`: nucleo, CLI, classificacao, movimentacao, leitura de texto e resumos.
-- `app.py`: interface grafica em CustomTkinter.
-- `tests/test_organizador.py`: testes automatizados do nucleo e da GUI.
-- `requirements.txt`: dependencias do projeto.
-- `.env`: configuracao local; nunca versionar a chave da API.
+## Estrutura do projeto
+- `organizador.py`: núcleo da lógica de organização, extração, proteção de dados, cache, IA, relatórios e controle de operação.
+- `app.py`: interface gráfica com `customtkinter` para executar a organização.
+- `tests/test_organizador.py`: testes de regressão e comportamento do sistema.
+- `contexto.txt`: documentação operativa do projeto.
+- `.env`: arquivo de configuração local da chave da Groq, quando necessário.
 
-## Uso
-Ative o ambiente virtual e instale as dependencias:
+## Módulos e funções principais
 
-```bash
-source venv/bin/activate
-pip install -r requirements.txt
-```
+### `organizador.py`
 
-Interface grafica:
+#### Constantes e categorias
+- `MODELO_PADRAO = "qwen/qwen3.6-27b"`
+- `MAX_TEXTO_LEITURA = 50_000`
+- `ARQUIVOS_INTERNOS`: lista de arquivos de projeto que devem ser ignorados durante organização.
+- `CATEGORIAS`: mapeia extensões para categorias (`documentos`, `pdfs`, `imagens`, `planilhas`, `compactados`, `outros`).
 
-```bash
-python app.py
-```
+#### Tipos e utilitários
+- `Estatisticas`: `TypedDict` com contadores e métricas finais da operação.
+- `Logger`: protocolo para logs.
+- `RichLogger`: implementação com Rich para console.
+- `OperacaoCancelada`: exceção para interrupção da operação.
+- `cancelar_futuros()`: cancela tarefas em execução.
 
-Linha de comando:
+#### Ambiente e configuração
+- `caminho_base()`: identifica a pasta do script ou do executável empacotado.
+- `caminhos_env()`: retorna caminhos do `.env` principal e alternativo.
+- `caminho_env_gravavel()`: escolhe local de manutenção do `.env` com permissão de escrita.
+- `carregar_ambiente()`: carrega o ambiente do `.env` válido.
+- `salvar_chave_api()`: salva `GROQ_API_KEY` com permissões restritas.
 
-```bash
-python organizador.py PASTA --dry-run --no-ai
-python organizador.py PASTA --max-files 10 --model qwen/qwen3.6-27b
-```
+#### Organização e classificação
+- `listar_arquivos_elegiveis()`: lista arquivos válidos e ordenados, com limite opcional.
+- `obter_categoria()`: retorna categoria baseada na extensão.
+- `sanitizar_nome_caminho()`: remove elementos perigosos e evita travessia de caminho.
+- `proximo_destino()`: evita sobrescrita com nomes incrementais.
 
-`--dry-run` simula sem alterar arquivos. `--no-ai` desativa resumos. Use `--max-files` para limitar a operacao.
+#### Extração de texto
+A aplicação suporta extração de:
+- PDF (`pypdf`)
+- TXT (`UTF-8`, `ISO-8859-1`, `Latin-1`)
+- DOCX
+- PPTX
+- HTML
+- CSV
 
-## Funcionamento
-Arquivos sao classificados por extensao em `pdfs`, `imagens`, `documentos`, `planilhas`, `compactados` ou `outros`. Nomes repetidos recebem sufixo numerico. Resumos sao salvos em `resumos/resumo_NOME.md` sem sobrescrever arquivos existentes.
+Principais funções:
+- `extrair_texto_pdf()`
+- `extrair_texto_txt()`
+- `extrair_texto_docx()`
+- `extrair_texto_pptx()`
+- `extrair_texto_html()`
+- `extrair_texto_csv()`
+- `extrair_texto()`
 
-Extensoes com extracao de texto: PDF, TXT, DOCX, PPTX, HTML e CSV. PDFs escaneados nao tem OCR.
-Toda extracao e limitada a `MAX_TEXTO_LEITURA` (50.000 caracteres) antes de qualquer resumo.
+Essas rotinas limitam o tamanho por `MAX_TEXTO_LEITURA` para evitar processamento excessivo e sobrecarga da IA.
 
-Arquivos internos ignorados: `.env`, `.gitignore`, `contexto.txt`, `organizador.py` e `app.py`.
+#### Proteção de dados sensíveis
+A função `anonimizar_texto_sensivel(texto: str) -> str` aplica regex para mascarar padrões sensíveis antes que o conteúdo saia do ambiente local. Os marcadores incluem:
+- `[CPF_PROTEGIDO]`
+- `[CNPJ_PROTEGIDO]`
+- `[RG_PROTEGIDO]`
+- `[EMAIL_PROTEGIDO]`
+- `[TELEFONE_PROTEGIDO]`
+- `[CARTAO_PROTEGIDO]`
+- `[SEGREDO_PROTEGIDO]`
+- `[DATA_PROTEGIDA]`
 
-A listagem é centralizada em `listar_arquivos_elegiveis()`, usada pelo núcleo e pela GUI. Ela valida a pasta, ignora itens que não são arquivos e arquivos internos, ordena por nome e aceita `max_files` maior que zero.
+A etapa de anonimização é obrigatória antes do envio para a IA, reduzindo risco de vazamento de dados pessoais ou secretos.
 
-Nomes usados em destinos passam por `sanitizar_nome_caminho()`, que remove barras, caracteres nulos e referências `..` para evitar Path Traversal.
+#### Hash e cache local inteligente
+- `calcular_sha256(caminho_arquivo: Path, chunk_size: int = 65536) -> str`: gera o hash em blocos para arquivos grandes.
+- `obter_caminho_cache(base_dir=None)`: resolve o arquivo de cache local da pasta atual.
+- `carregar_cache()`: lê JSON e retorna dicionário vazio em caso de falha ou arquivo inexistente.
+- `salvar_cache()`: grava cache em JSON com persistência segura.
 
-O salvamento da `GROQ_API_KEY` é centralizado em `salvar_chave_api()`. A chave é gravada no `.env` escolhido por `caminho_env_gravavel()`, recebe permissão `0o600` em Linux/macOS e também atualiza o ambiente do processo.
+A chave do cache usa o padrão:
+- `f"{sha256}_{modelo}"`
 
-Resumos usam até três tentativas com backoff exponencial e jitter. O cancelamento da operação cancela futuros pendentes e encerra o executor sem bloquear a interface.
-Falhas genéricas persistentes da API retornam `None` após as tentativas; o processamento em lote trata esse resultado como falha sem gravar resumo inválido.
+Isso permite detectar conteúdo idêntico mesmo quando o arquivo tenha nomes diferentes, como também separa contexto por modelo de IA.
 
-O Modo Simulação (Dry Run) pode ser ativado na GUI ou pela CLI. Ele apenas registra as movimentações e resumos previstos, sem mover arquivos, criar pastas ou escrever resumos.
+#### IA e geração de resumo
+- `gerar_resumo()`: envia texto para a API da Groq e recebe um resumo em português.
+- Suporta `stream=True` e reconstrói o texto parcial em chunks.
+- Trata falhas de rate limit, conexão, status HTTP e exceções genéricas.
+- Implementa retries com backoff exponencial e jitter.
 
-## IA
-Defina `GROQ_API_KEY` no `.env` ou pela interface. O modelo padrao e `qwen/qwen3.6-27b`. A aplicacao tenta novamente falhas temporarias da API e registra erros sem interromper a organizacao dos arquivos.
+A função aceita parâmetros como:
+- `texto`
+- `nome_arquivo`
+- `model`
+- `client`
+- `logger`
+- `api_key`
+- `stream`
 
-## Testes e distribuicao
-Execute os testes com:
+#### Relatórios e estatísticas
+- `salvar_resumo()`: grava resumo individual no diretório `resumos`.
+- `gerar_relatorio_geral_markdown()`: cria relatório consolidado em Markdown com dados finais da operação.
+- `organizar_pasta()`: executa o pipeline completo e retorna um `Estatisticas` final.
 
-```bash
-PYTHONPATH=. pytest -q
-```
+As estatísticas incluem:
+- `movidos`
+- `resumos_sucesso`
+- `resumos_falha`
+- `por_categoria`
+- `destino`
+- `cache_hits`
+- `cache_misses`
+- `taxa_hits`
+- `taxa_misses`
+- `caracteres_salvos`
+- `tokens_salvos`
+- `tempo_estimado_segundos`
 
-Para gerar um executavel Linux:
+#### Fluxo principal da operação
+`organizar_pasta()` executa esta sequência:
+1. Listar arquivos elegíveis.
+2. Calcular categoria e destino sem sobrescrever arquivos existentes.
+3. Extrair texto suportado.
+4. Anonimizar dados sensíveis.
+5. Calcular hash SHA-256 do arquivo.
+6. Verificar cache local por `sha256 + model`.
+7. Reusar resumo em cache quando existir.
+8. Se não existir, chamar a Groq para gerar resumo.
+9. Salvar resumo em Markdown.
+10. Mover arquivos para as pastas da categoria.
+11. Gerar relatório final e retornar estatísticas.
 
-```bash
-pyinstaller --noconsole --onefile app.py
-```
+Parâmetros aceitos:
+- `caminho_pasta`
+- `dry_run`
+- `no_ai`
+- `model`
+- `max_files`
+- `logger`
+- `progresso`
+- `cancel_event`
+- `estatisticas`
+
+#### CLI
+`construir_parser()` define as opções do terminal:
+- `caminho`
+- `-d/--dry-run`
+- `--no-ai`
+- `--model`
+- `--max-files`
+
+`main()` executa a linha de comando.
+
+### `app.py`
+A interface gráfica utiliza `customtkinter` e contém blocos principais como:
+- `validar_max_files()`: valida limite de arquivos.
+- `GuiLogger`: registra mensagens na interface.
+- `HeaderFrame`: cabeçalho da aplicação.
+- `DirectorySelectionFrame`: seleção da pasta de trabalho.
+- `SettingsFrame`: chave Groq, modelo, IA, dry run e limite de arquivos.
+- `ConsoleLogFrame`: log operacional, limpeza e exportação.
+- `ExecutionControlFrame`: início/cancelamento e progresso.
+- `StatisticsFrame`: resumo da execução.
+- `OrganizadorApp`: janela principal e fluxo da aplicação.
+
+A interface usa `organizador.salvar_chave_api()` para persistir a chave de acesso.
+
+## Regras de negócio e comportamento
+- Arquivos do próprio projeto, como `.env`, `app.py`, `organizador.py`, `contexto.txt` e `.gitignore`, são ignorados.
+- `dry_run=True` apenas simula a operação sem mover arquivos.
+- `no_ai=True` desativa a geração de resumos por IA.
+- Quando `GROQ_API_KEY` não existe, a IA é ignorada e o processo continua sem resumo.
+- Resumos só são gerados para textos não vazios, conforme regras de validação.
+- Arquivos sem texto extraível podem continuar sendo movidos sem resumo.
+- Cache é calculado do conteúdo e do modelo, não apenas do nome do arquivo.
+- Quando a operação é cancelada, as futuras tarefas são interrompidas e a exceção `OperacaoCancelada` é levantada.
+
+## Testes automatizados
+Arquivo: `tests/test_organizador.py`
+
+Cobertura principal:
+- categoria por extensão;
+- sanitização de caminhos;
+- listagem de arquivos elegíveis;
+- persistência da chave API;
+- leitura de TXT/CSV/PDF/DOCX;
+- resumo com sucesso;
+- retry em falha temporária;
+- dry run;
+- limite `max_files`;
+- cancelamento de operação;
+- destino incremental;
+- logs e exportação;
+- hash SHA-256;
+- anonimização de dados sensíveis;
+- cache local;
+- streaming de resumo;
+- relatórios Markdown consolidados;
+- compatibilidade geral da aplicação.
+
+## Histórico de correções e diagnóstico
+Durante a validação, surgiram quatro problemas relevantes que exigiram ajustes reais no código:
+
+1. Erro de indentação no bloco de retorno vazio de `organizar_pasta()`
+- Causa: bloco `if not arquivos` estava com indentação inconsistente.
+- Ajuste: corrigir a estrutura do retorno para que a função retornasse `Estatisticas` válidas sem quebrar a compilação.
+
+2. Cache compartilhado entre diferentes pastas
+- Causa: o caminho do cache era global para o ambiente e não específico da pasta processada.
+- Ajuste: mudar `obter_caminho_cache()` para aceitar base da pasta e usar um cache local por diretório (`.cache_resumos.json` dentro da pasta).
+- Impacto: evita mistura de resumos entre operações distintas e melhora previsibilidade.
+
+3. Detecção incorreta de resposta em streaming
+- Causa: a função `gerar_resumo()` tratava objetos que tinham `__iter__` como stream, mesmo quando a resposta era uma resposta normal com `.choices` configurada.
+- Ajuste: filtrar a condição para `stream=True` e `not hasattr(resposta, "choices")` antes de processar chunks.
+- Impacto: testes de mock e respostas normais passaram a se comportar corretamente.
+
+4. Falta de cobertura de regressão para streaming e relatório
+- Causa: a expansão do sistema adicionou recursos novos sem validar cenários básicos de stream, cache e relatório final.
+- Ajuste: ampliar `tests/test_organizador.py` com cenários de streaming, recuperação após erro, PII expandida e geração de Markdown.
+
+## Resultado final da validação
+Comando executado:
+- `source venv/bin/activate && python -m pytest tests/test_organizador.py -q`
+
+Evidência verificada:
+- 30 testes passaram em 1.26s.
+- Resultado final: estabilidade confirmada, sem regressão das rotinas existentes.
+
+## Conclusão
+O projeto está funcional, estável e validado. O código principal em `organizador.py` implementa corretamente a organização por categoria, proteção de dados sensíveis, cache local inteligente, geração de resumo via Groq, relatórios finais e controle de cancelamento. A suíte automatizada confirma que as mudanças recentes não quebraram o comportamento anterior.
