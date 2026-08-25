@@ -1,9 +1,12 @@
 import os
+import threading
 from pathlib import Path
 import warnings
 
 import app
 import organizador
+import pytest
+from unittest.mock import patch, MagicMock
 
 
 class LoggerDeTeste:
@@ -23,6 +26,11 @@ class LoggerDeTeste:
 def test_obter_categoria_case_insensitive():
     assert organizador.obter_categoria(".DOCX") == "documentos"
     assert organizador.obter_categoria(".desconhecido") == "outros"
+
+
+def test_sanitizar_nome_caminho_remove_path_traversal():
+    assert organizador.sanitizar_nome_caminho("../../subpasta") == "______subpasta"
+    assert organizador.sanitizar_nome_caminho("pasta/teste") == "pasta_teste"
 
 
 def test_listar_arquivos_elegiveis(tmp_path):
@@ -56,6 +64,35 @@ def test_extrair_texto_txt_latin1(tmp_path):
     assert organizador.extrair_texto_txt(caminho) == "Ação e informação"
 
 
+def test_extrair_texto_limita_tamanho_maximo(tmp_path):
+    caminho = tmp_path / "grande.txt"
+    caminho.write_text("x" * 60_000, encoding="utf-8")
+
+    texto = organizador.extrair_texto(caminho)
+
+    assert len(texto) == organizador.MAX_TEXTO_LEITURA == 50_000
+
+
+@patch("organizador.Groq")
+def test_gerar_resumo_sucesso(mock_groq):
+    mock_groq.return_value.chat.completions.create.return_value.choices[0].message.content = "Resumo simulado com sucesso"
+
+    resultado = organizador.gerar_resumo("Texto de teste", api_key="chave_fake")
+
+    assert resultado == "Resumo simulado com sucesso"
+
+
+@patch("organizador.Groq")
+@patch("time.sleep")
+def test_gerar_resumo_falha_persistente_com_retry(mock_sleep, mock_groq):
+    mock_groq.return_value.chat.completions.create.side_effect = RuntimeError("falha temporaria")
+
+    resultado = organizador.gerar_resumo("Texto de teste", api_key="chave_fake")
+
+    assert resultado is None
+    assert mock_sleep.called
+
+
 def test_extrair_texto_docx(tmp_path):
     from docx import Document
 
@@ -76,6 +113,16 @@ def test_dry_run_ignora_arquivos_internos_e_nao_cria_pastas(tmp_path):
 
     assert not (tmp_path / "documentos").exists()
     assert (tmp_path / "relatorio.txt").exists()
+
+
+def test_organizar_pasta_dry_run_nao_move_arquivos(tmp_path):
+    arquivo = tmp_path / "relatorio.txt"
+    arquivo.write_text("relatorio", encoding="utf-8")
+
+    organizador.organizar_pasta(tmp_path, dry_run=True, no_ai=True)
+
+    assert arquivo.exists()
+    assert not (tmp_path / "documentos" / arquivo.name).exists()
 
 
 def test_destino_incremental(tmp_path):
@@ -131,6 +178,23 @@ def test_cancelar_futuros_solicita_cancelamento():
     organizador.cancelar_futuros(futuros)
 
     assert all(futuro.cancelado for futuro in futuros)
+
+
+def test_cancelamento_interrompe_resumos_e_lanca_excecao(tmp_path, monkeypatch):
+    cancel_event = threading.Event()
+    for nome in ("a.txt", "b.txt"):
+        (tmp_path / nome).write_text("texto suficiente para gerar um resumo com a IA. " * 2, encoding="utf-8")
+
+    def gerar_resumo_cancelando(*args, **kwargs):
+        cancel_event.set()
+        return "resumo"
+
+    monkeypatch.setenv("GROQ_API_KEY", "chave-de-teste")
+    monkeypatch.setattr(organizador, "Groq", lambda **kwargs: object())
+    monkeypatch.setattr(organizador, "gerar_resumo", gerar_resumo_cancelando)
+
+    with pytest.raises(organizador.OperacaoCancelada):
+        organizador.organizar_pasta(tmp_path, model="modelo-teste", cancel_event=cancel_event)
 
 
 def test_pdf_escaneado_gera_alerta(tmp_path, monkeypatch):

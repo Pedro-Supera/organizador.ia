@@ -1,5 +1,4 @@
 
-Ao alterar o comportamento do nucleo, atualize ou crie um teste correspondente em `tests/test_organizador.py`. Preserve a separacao entre logica em `organizador.py` e interface em `app.py`.
 # Organizador Inteligente
 
 ## Objetivo
@@ -39,12 +38,20 @@ python organizador.py PASTA --max-files 10 --model qwen/qwen3.6-27b
 Arquivos sao classificados por extensao em `pdfs`, `imagens`, `documentos`, `planilhas`, `compactados` ou `outros`. Nomes repetidos recebem sufixo numerico. Resumos sao salvos em `resumos/resumo_NOME.md` sem sobrescrever arquivos existentes.
 
 Extensoes com extracao de texto: PDF, TXT, DOCX, PPTX, HTML e CSV. PDFs escaneados nao tem OCR.
+Toda extracao e limitada a `MAX_TEXTO_LEITURA` (50.000 caracteres) antes de qualquer resumo.
 
 Arquivos internos ignorados: `.env`, `.gitignore`, `contexto.txt`, `organizador.py` e `app.py`.
 
 A listagem é centralizada em `listar_arquivos_elegiveis()`, usada pelo núcleo e pela GUI. Ela valida a pasta, ignora itens que não são arquivos e arquivos internos, ordena por nome e aceita `max_files` maior que zero.
 
+Nomes usados em destinos passam por `sanitizar_nome_caminho()`, que remove barras, caracteres nulos e referências `..` para evitar Path Traversal.
+
 O salvamento da `GROQ_API_KEY` é centralizado em `salvar_chave_api()`. A chave é gravada no `.env` escolhido por `caminho_env_gravavel()`, recebe permissão `0o600` em Linux/macOS e também atualiza o ambiente do processo.
+
+Resumos usam até três tentativas com backoff exponencial e jitter. O cancelamento da operação cancela futuros pendentes e encerra o executor sem bloquear a interface.
+Falhas genéricas persistentes da API retornam `None` após as tentativas; o processamento em lote trata esse resultado como falha sem gravar resumo inválido.
+
+O Modo Simulação (Dry Run) pode ser ativado na GUI ou pela CLI. Ele apenas registra as movimentações e resumos previstos, sem mover arquivos, criar pastas ou escrever resumos.
 
 ## IA
 Defina `GROQ_API_KEY` no `.env` ou pela interface. O modelo padrao e `qwen/qwen3.6-27b`. A aplicacao tenta novamente falhas temporarias da API e registra erros sem interromper a organizacao dos arquivos.

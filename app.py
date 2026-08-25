@@ -108,7 +108,7 @@ class SettingsFrame(ctk.CTkFrame):
         modelo = ctk.CTkComboBox(self, variable=modelo_var, values=self.MODELOS)
         modelo.grid(row=2, column=1, columnspan=2, padx=8, pady=(6, 14), sticky="ew")
         ctk.CTkLabel(self, text="Modelo usado para gerar os resumos.", text_color="#9BA4B5").grid(row=3, column=1, columnspan=2, padx=8, sticky="w")
-        teste = ctk.CTkCheckBox(self, text="Modo Teste / Dry Run", variable=teste_var)
+        teste = ctk.CTkCheckBox(self, text="Modo Simulação (Dry Run)", variable=teste_var)
         teste.grid(row=2, column=3, padx=(8, 16), pady=(6, 14), sticky="w")
         ctk.CTkLabel(self, text="Máximo de arquivos").grid(row=4, column=0, padx=(16, 8), pady=(6, 14), sticky="w")
         maximo = ctk.CTkEntry(self, textvariable=max_files_var, placeholder_text="Todos")

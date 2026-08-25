@@ -25,6 +25,7 @@ from rich.progress import BarColumn, Progress, SpinnerColumn, TaskProgressColumn
 from rich.table import Table
 
 MODELO_PADRAO = "qwen/qwen3.6-27b"
+MAX_TEXTO_LEITURA = 50_000
 URL_CHAVES_GROQ = "https://console.groq.com/keys"
 ARQUIVOS_INTERNOS = {".env", ".gitignore", "contexto.txt", "organizador.py", "app.py"}
 
@@ -134,6 +135,11 @@ def carregar_ambiente() -> Path | None:
             load_dotenv(dotenv_path=caminho)
             return caminho
     return None
+
+
+def sanitizar_nome_caminho(nome: str) -> str:
+    """Remove componentes que poderiam escapar do diretório de destino."""
+    return nome.replace("/", "_").replace("\\", "_").replace("\0", "_").replace("..", "__").strip()
 
 
 def salvar_chave_api(chave: str) -> bool:
@@ -264,20 +270,21 @@ def extrair_texto(caminho: Path, logger: Logger | None = None) -> str:
         ".csv": extrair_texto_csv,
     }
     extrator = extratores.get(caminho.suffix.lower())
-    return extrator(caminho, logger) if extrator else ""
+    return (extrator(caminho, logger) if extrator else "")[:MAX_TEXTO_LEITURA]
 
 
-def gerar_resumo(texto: str, nome_arquivo: str, model: str = MODELO_PADRAO,
-                 client: Any | None = None, logger: Logger | None = None) -> str:
+def gerar_resumo(texto: str, nome_arquivo: str = "arquivo", model: str = MODELO_PADRAO,
+                 client: Any | None = None, logger: Logger | None = None,
+                 api_key: str | None = None) -> str | None:
     """Gera um resumo em português usando a API da Groq."""
-    if not texto or len(texto) < 50:
+    if not texto or (len(texto) < 50 and api_key is None):
         return "Texto muito curto ou vazio para gerar resumo."
     carregar_ambiente()
     if client is None:
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
+        chave = api_key or os.getenv("GROQ_API_KEY")
+        if not chave:
             return "IA desativada: GROQ_API_KEY não configurada."
-        client = Groq(api_key=api_key)
+        client = Groq(api_key=chave)
     prompt = f"Faça um resumo em português do texto abaixo em no máximo 5 linhas.\nSeja claro e objetivo.\n\nTexto:\n{texto[:6000]}"
     for tentativa in range(3):
         try:
@@ -307,14 +314,16 @@ def gerar_resumo(texto: str, nome_arquivo: str, model: str = MODELO_PADRAO,
                 (logger or RichLogger()).warning(f"Falha da API ao resumir {nome_arquivo}: {erro}")
         except Exception as erro:
             (logger or RichLogger()).warning(f"Erro ao gerar resumo de {nome_arquivo}: {erro}")
-            break
+            if tentativa < 2:
+                _aguardar_retry(tentativa)
+            else:
+                return None
     return "Erro ao gerar resumo com a IA."
 
 
 def _aguardar_retry(tentativa: int) -> None:
     """Aguarda com backoff exponencial e jitter antes de repetir uma chamada."""
-    atraso = min(30.0, 2 ** tentativa) + random.uniform(0.1, 0.5)
-    time.sleep(atraso)
+    time.sleep((2 ** tentativa) + random.uniform(0.1, 0.5))
 
 
 def proximo_destino(destino: Path) -> Path:
@@ -329,7 +338,8 @@ def proximo_destino(destino: Path) -> Path:
 
 def salvar_resumo(pasta_resumos: Path, nome_arquivo: str, resumo: str) -> None:
     """Salva um resumo Markdown sem sobrescrever outro existente."""
-    destino = proximo_destino(pasta_resumos / f"resumo_{Path(nome_arquivo).stem}.md")
+    nome_seguro = sanitizar_nome_caminho(Path(nome_arquivo).stem)
+    destino = proximo_destino(pasta_resumos / f"resumo_{nome_seguro}.md")
     destino.write_text(f"# Resumo de {nome_arquivo}\n\n{resumo}\n", encoding="utf-8")
 
 
@@ -357,7 +367,9 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
         if cancel_event and cancel_event.is_set():
             raise OperacaoCancelada
         categoria = obter_categoria(arquivo.suffix)
-        destino = proximo_destino(pasta / categoria / arquivo.name)
+        categoria_segura = sanitizar_nome_caminho(categoria)
+        nome_seguro = sanitizar_nome_caminho(arquivo.name)
+        destino = proximo_destino(pasta / categoria_segura / nome_seguro)
         while destino in usados:
             destino = proximo_destino(destino)
         usados.add(destino)
@@ -371,7 +383,7 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
         if cancel_event and cancel_event.is_set():
             raise OperacaoCancelada
         if dry_run:
-            logger.info(f"SIMULAÇÃO {arquivo.name} -> {categoria}/{destino.name}")
+            logger.info(f"[SIMULAÇÃO] Moveria {arquivo} -> {destino}")
         elif arquivo.parent != destino.parent or arquivo.name != destino.name:
             try:
                 destino.parent.mkdir(exist_ok=True)
@@ -385,7 +397,9 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
     tarefas_ia = [(arquivo, texto) for arquivo, _, _, texto in planos if texto and not no_ai]
     if tarefas_ia and dry_run:
         for arquivo, _ in tarefas_ia:
-            logger.info(f"SIMULAÇÃO gerar resumo para {arquivo.name}")
+            nome_seguro = sanitizar_nome_caminho(Path(arquivo.name).stem)
+            resumo_path = proximo_destino(pasta_resumos / f"resumo_{nome_seguro}.md")
+            logger.info(f"[SIMULAÇÃO] Criaria resumo em {resumo_path}")
         if progresso:
             progresso(0.5)
     elif tarefas_ia:
@@ -406,9 +420,10 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
                         raise OperacaoCancelada
                     arquivo = futuros[futuro]
                     resumo = futuro.result()
-                    salvar_resumo(pasta_resumos, arquivo.name, resumo)
-                    resumos.add(arquivo.name)
-                    if resumo.startswith("Erro"):
+                    if resumo is not None:
+                        salvar_resumo(pasta_resumos, arquivo.name, resumo)
+                        resumos.add(arquivo.name)
+                    if resumo is None or resumo.startswith("Erro"):
                         resumos_falha += 1
                     if progresso:
                         progresso(indice / (len(tarefas_ia) * 2))
