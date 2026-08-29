@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Interface gráfica modular do Organizador Inteligente."""
 
-from __future__ import annotations
-
+from __future__ import annotations 
+import sys
 import os
 import queue
 import subprocess
@@ -13,12 +13,13 @@ from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
 from typing import Any
-
+import io
 import customtkinter as ctk
 
 import organizador
 
-
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 def validar_max_files(valor: str) -> int | None:
     """Converte um limite de arquivos válido ou retorna None para ilimitado."""
     valor = valor.strip()
