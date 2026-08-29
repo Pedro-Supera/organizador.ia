@@ -111,8 +111,13 @@ class _ExtratorHTML(HTMLParser):
 
 def caminho_base() -> Path:
     """Retorna a pasta do script ou do executável empacotado."""
+    # Trata PyInstaller com _MEIPASS para localizar recursos
+    if getattr(sys, "_MEIPASS", None):
+        return Path(sys._MEIPASS)
+    # Trata outros tipos de empacotamento (frozen)
     if getattr(sys, "frozen", False):
         return Path(sys.executable).resolve().parent
+    # Execução normal como script
     return Path(__file__).resolve().parent
 
 

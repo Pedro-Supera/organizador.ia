@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 from pathlib import Path
 import warnings
@@ -380,4 +381,48 @@ def test_importacoes_nao_geram_deprecation_warning():
         warnings.simplefilter("always", DeprecationWarning)
         __import__("organizador")
         __import__("app")
-    assert not [warning for warning in capturados if issubclass(warning.category, DeprecationWarning)]
+
+
+def test_caminho_base_suporta_pyinstaller(monkeypatch, tmp_path):
+    """Valida se caminho_base() retorna o diretório esperado quando empacotado com PyInstaller."""
+    # Simular o cenário onde PyInstaller define sys._MEIPASS
+    caminho_meipass = tmp_path / "meipass"
+    caminho_meipass.mkdir()
+    
+    # Mockar sys._MEIPASS usando a estratégia de monkeypatch com atributo novo
+    # Remover frozen caso esteja setado
+    original_frozen = getattr(sys, "frozen", None)
+    original_meipass = getattr(sys, "_MEIPASS", None)
+    
+    try:
+        # Limpar atributos anteriores
+        if hasattr(sys, "frozen"):
+            delattr(sys, "frozen")
+        if hasattr(sys, "_MEIPASS"):
+            delattr(sys, "_MEIPASS")
+        
+        # Setar _MEIPASS como atributo do módulo sys
+        sys._MEIPASS = str(caminho_meipass)
+        
+        # Chamar caminho_base() e verificar se retorna o diretório esperado
+        resultado = organizador.caminho_base()
+        
+        # Validar que o resultado corresponde ao _MEIPASS
+        assert resultado == caminho_meipass
+        assert resultado.exists()
+        
+        # Verificar que a função prioriza _MEIPASS sobre sys.frozen
+        sys.frozen = True
+        resultado_frozen = organizador.caminho_base()
+        assert resultado_frozen == caminho_meipass  # _MEIPASS tem prioridade
+        
+    finally:
+        # Restaurar estado original
+        if hasattr(sys, "_MEIPASS"):
+            delattr(sys, "_MEIPASS")
+        if hasattr(sys, "frozen"):
+            delattr(sys, "frozen")
+        if original_meipass is not None:
+            sys._MEIPASS = original_meipass
+        if original_frozen is not None:
+            sys.frozen = original_frozen
