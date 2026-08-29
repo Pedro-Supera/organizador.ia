@@ -23,6 +23,8 @@ jobs:
           pip install pyinstaller
 
       - name: Executar o script de build
+        env:
+          PYTHONIOENCODING: "utf-8"
         run: |
           python construir_executavel.py
 
