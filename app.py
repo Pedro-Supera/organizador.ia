@@ -16,11 +16,26 @@ from tkinter import filedialog, messagebox
 from typing import Any
 import io
 import customtkinter as ctk
+from tkinter import filedialog
 
 import organizador
-app = ctk.CTk()
-app.title("Organizador Inteligente")
-app.eval('tk appname organizadorinteligente')
+class App(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+        
+        self.title("Organizador Inteligente")
+        self.geometry("800x600")
+        
+        self.option_add('*tkName', 'organizadorinteligente')
+
+    def selecionar_pasta(self):
+        pasta = filedialog.askdirectory(parent=self)
+        if pasta:
+            print(f"Pasta selecionada: {pasta}")
+
+if __name__ == "__main__":
+    app = App()
+    app.mainloop()
 sys.setrecursionlimit(10000)    
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
