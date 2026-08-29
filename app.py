@@ -18,9 +18,10 @@ import io
 import customtkinter as ctk
 
 import organizador
-app = ctk.CTk(className='organizadorinteligente')
+app = ctk.CTk()
 app.title("Organizador Inteligente")
-
+app.eval('tk appname organizadorinteligente')
+sys.setrecursionlimit(10000)    
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 def validar_max_files(valor: str) -> int | None:
