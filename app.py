@@ -3,6 +3,7 @@
 
 from __future__ import annotations 
 import sys
+import tkinter as tk
 import os
 import queue
 import subprocess
@@ -18,6 +19,8 @@ import customtkinter as ctk
 
 import organizador
 
+root = tk.Tk(className='organizadorinteligente')
+root.title("Organizador Inteligente")
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 def validar_max_files(valor: str) -> int | None:
