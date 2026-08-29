@@ -1,9 +1,71 @@
+# Virtual environment
 venv/
-.env
+env/
+.venv
+
+# Python
 __pycache__/
-*.pyc
-.DS_Store
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.Python
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# PyInstaller
+*.spec
 build/
 dist/
-*.spec
+*.manifest
+
+# IDE and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# OS
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Testing
+.pytest_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# Project specific
+.cache_resumos.json
+resumos/
+*/resumos/
+tmp_*
+temp_*
+
+# Cache
+*.cache
+__pycache__
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+
+# Logs
+*.log
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Windows
+*.exe
 
