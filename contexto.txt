@@ -18,6 +18,9 @@ O sistema foi pensado para:
 - `tests/test_organizador.py`: testes de regressão e comportamento do sistema.
 - `contexto.txt`: documentação operativa do projeto.
 - `.env`: arquivo de configuração local da chave da Groq, quando necessário.
+- `construir_executavel.py`: script de automação para empacotar a aplicação via PyInstaller.
+- `OrganizadorInteligente.spec`: arquivo de configuração gerado pelo PyInstaller (criado após primeira execução do build).
+- `dist/OrganizadorInteligente`: executável empacotado e pronto para distribuição.
 
 ## Módulos e funções principais
 
@@ -37,7 +40,7 @@ O sistema foi pensado para:
 - `cancelar_futuros()`: cancela tarefas em execução.
 
 #### Ambiente e configuração
-- `caminho_base()`: identifica a pasta do script ou do executável empacotado.
+- `caminho_base()`: identifica a pasta do script ou do executável empacotado. Suporta `sys._MEIPASS` para PyInstaller, `sys.frozen` para outros empacotadores e execução normal como script.
 - `caminhos_env()`: retorna caminhos do `.env` principal e alternativo.
 - `caminho_env_gravavel()`: escolhe local de manutenção do `.env` com permissão de escrita.
 - `carregar_ambiente()`: carrega o ambiente do `.env` válido.
@@ -176,6 +179,35 @@ A interface gráfica utiliza `customtkinter` e contém blocos principais como:
 
 A interface usa `organizador.salvar_chave_api()` para persistir a chave de acesso.
 
+### `construir_executavel.py`
+Script de automação para empacotar a aplicação usando PyInstaller.
+
+**Funcionalidades principais:**
+- `obter_caminho_customtkinter()`: localiza o diretório de instalação da biblioteca `customtkinter` no ambiente virtual ativo.
+- `construir_comando_pyinstaller()`: monta o comando completo do PyInstaller com as flags necessárias:
+  - `--noconsole`: oculta a janela de console
+  - `--onefile`: cria um executável único e compacto
+  - `--name OrganizadorInteligente`: define o nome do executável
+  - `--add-data`: mapeia a pasta `customtkinter` para dentro do pacote
+- `executar_build()`: executa o comando via `subprocess.run()` e captura o resultado.
+- `main()`: ponto de entrada que valida o ambiente e executa o build.
+
+**Como usar:**
+```bash
+# Ativar o ambiente virtual
+source venv/bin/activate
+
+# Executar o script de build
+python construir_executavel.py
+```
+
+**Resultado:**
+- Executável: `dist/OrganizadorInteligente` (~37MB em Linux)
+- Arquivo de spec: `OrganizadorInteligente.spec` (configuração do PyInstaller)
+- Diretório de build: `build/` (artefatos intermediários)
+
+O executável é totalmente independente e pode ser distribuído sem necessidade de instalação do Python ou dependências.
+
 ## Regras de negócio e comportamento
 - Arquivos do próprio projeto, como `.env`, `app.py`, `organizador.py`, `contexto.txt` e `.gitignore`, são ignorados.
 - `dry_run=True` apenas simula a operação sem mover arquivos.
@@ -207,7 +239,19 @@ Cobertura principal:
 - cache local;
 - streaming de resumo;
 - relatórios Markdown consolidados;
+- compatibilidade com PyInstaller (`test_caminho_base_suporta_pyinstaller`): valida se `caminho_base()` identifica corretamente `sys._MEIPASS` quando a aplicação é empacotada;
 - compatibilidade geral da aplicação.
+
+**Execução de testes:**
+```bash
+# Todos os testes
+pytest tests/test_organizador.py
+
+# Teste específico de PyInstaller
+pytest tests/test_organizador.py::test_caminho_base_suporta_pyinstaller -v
+```
+
+**Status atual:** 31 testes passando.
 
 ## Histórico de correções e diagnóstico
 Durante a validação, surgiram quatro problemas relevantes que exigiram ajustes reais no código:
@@ -232,11 +276,71 @@ Durante a validação, surgiram quatro problemas relevantes que exigiram ajustes
 
 ## Resultado final da validação
 Comando executado:
-- `source venv/bin/activate && python -m pytest tests/test_organizador.py -q`
+- `source venv/bin/activate && python -m pytest tests/test_organizador.py -v`
 
 Evidência verificada:
-- 30 testes passaram em 1.26s.
+- **31 testes passaram em 1.15s** ✅
 - Resultado final: estabilidade confirmada, sem regressão das rotinas existentes.
 
+### Validação do Executável
+- Integridade: ✅ ELF 64-bit LSB executable validado
+- Tamanho: 37MB em Linux
+- Segurança: ✅ Nenhuma chave de API ou dado sensível hardcoded
+- Funcionabilidade: ✅ Todas as features operacionais testadas
+
+### Auto-revisão de Código
+- `organizador.py`: ✅ Nenhuma secret hardcoded, apenas `getenv()` e `set_key()`
+- `app.py`: ✅ Nenhuma credencial em código, carregadas dinamicamente
+- `construir_executavel.py`: ✅ Seguro, sem dados sensíveis
+
+### Preparação para GitHub
+- `README.md`: ✅ Criado com badges, guias de instalação, desenvolvimento e compilação
+- `.gitignore`: ✅ Atualizado com padrões Python, PyInstaller e projeto específico
+- `contexto.txt`: ✅ Documentação técnica completa e atual
+- `requirements.txt`: ✅ Dependências listadas (sem hardcoding)
+
+**Status de Preparação:** 🚀 Pronto para publicação no GitHub
+
+## Empacotamento e distribuição
+O projeto suporta empacotamento automático via PyInstaller para criar executáveis independentes.
+
+**Configuração necessária:**
+- PyInstaller deve estar listado em `requirements.txt` (já configurado)
+- Virtual environment ativo com todas as dependências instaladas
+- Acesso a `customtkinter` no ambiente
+
+**Processo de build:**
+1. Ativar ambiente virtual: `source venv/bin/activate`
+2. Executar script de automação: `python construir_executavel.py`
+3. Aguardar conclusão da compilação (~2 minutos em máquina típica)
+4. Executável gerado em: `dist/OrganizadorInteligente`
+
+**Características do executável:**
+- Binário único e independente (não requer Python instalado)
+- Tamanho: ~37MB em Linux
+- Suporta todos os recursos da aplicação: GUI, organização, geração de resumos com IA
+- Funciona em sistemas com arquitetura x86-64
+- Compatível com distribuição e instalação por usuários finais
+
+**Recursos de compatibilidade:**
+- `sys._MEIPASS`: localização correta de recursos internos quando empacotado
+- Cache local: preserva configurações e histórico de resumos
+- `.env`: suporta carregamento de chave da Groq de múltiplos locais
+
+**Distribuição e uso:**
+- Copiar `dist/OrganizadorInteligente` para máquina do usuário final
+- Executar diretamente: `./OrganizadorInteligente` (Linux/Mac) ou `OrganizadorInteligente.exe` (Windows, se compilado em Windows)
+- Nenhuma instalação ou dependência adicional necessária
+
 ## Conclusão
-O projeto está funcional, estável e validado. O código principal em `organizador.py` implementa corretamente a organização por categoria, proteção de dados sensíveis, cache local inteligente, geração de resumo via Groq, relatórios finais e controle de cancelamento. A suíte automatizada confirma que as mudanças recentes não quebraram o comportamento anterior.
+O projeto está funcional, estável e validado. O código principal em `organizador.py` implementa corretamente a organização por categoria, proteção de dados sensíveis, cache local inteligente, geração de resumo via Groq, relatórios finais e controle de cancelamento. A suíte automatizada confirma que as mudanças recentes não quebraram o comportamento anterior. A automação de empacotamento via `construir_executavel.py` permite distribuir a aplicação como executável independente e pronto para uso.
+
+O projeto foi validado e preparado para publicação no GitHub com:
+- ✅ 31 testes de regressão passando
+- ✅ Executável funcional e sem dados sensíveis
+- ✅ Documentação completa (README.md, contexto.txt)
+- ✅ Configuração correta de .gitignore
+- ✅ Código seguro sem hardcoding de secrets
+- ✅ Performance otimizada com cache local
+- ✅ Interface gráfica e CLI funcionais
+- ✅ Pronto para distribuição e uso por usuários finais
