@@ -1,0 +1,20 @@
+---
+description: Arquitetura da GUI e empacotamento do Organizador Inteligente
+alwaysApply: true
+---
+
+# Organizador Inteligente (CustomTkinter + Python)
+
+## Janela principal
+- Uma única janela: `OrganizadorApp(ctk.CTk)`. Não criar outra subclasse de `CTk` nem um segundo `if __name__ == "__main__"`.
+- Definir `wm_class("organizadorinteligente", "OrganizadorInteligente")` em `OrganizadorApp.__init__`.
+- Em todo `filedialog` / `messagebox`, passar `parent=` da janela principal (ou `self.winfo_toplevel()` nos frames) para não abrir janelas fantasmas no Linux/GNOME.
+
+## Arquitetura
+- `app.py`: só UI (frames, fila de eventos, thread de execução). Sem classes de app duplicadas.
+- `organizador.py`: núcleo (classificação, Groq, cache, relatórios).
+- Logs em tempo real: worker empilha em `queue.Queue`; a UI consome com `after` + `_processar_eventos`. Não atualizar widgets a partir da thread de trabalho.
+
+## Compilação e atalho
+- PyInstaller: `--noconsole --onefile`, binário `~/.local/bin/OrganizadorInteligente`.
+- Desktop Entry com `StartupWMClass=organizadorinteligente`.

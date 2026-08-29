@@ -22,11 +22,11 @@ import organizador
 class App(ctk.CTk):
     def __init__(self):
         super().__init__()
-        
+
         self.title("Organizador Inteligente")
         self.geometry("800x600")
-        
-        self.option_add('*tkName', 'organizadorinteligente')
+
+        self.wm_class("organizadorinteligente", "OrganizadorInteligente")
 
     def selecionar_pasta(self):
         pasta = filedialog.askdirectory(parent=self)
@@ -34,6 +34,9 @@ class App(ctk.CTk):
             print(f"Pasta selecionada: {pasta}")
 
 if __name__ == "__main__":
+    ctk.set_appearance_mode("System")
+    ctk.set_default_color_theme("blue")
+    
     app = App()
     app.mainloop()
 sys.setrecursionlimit(10000)    
