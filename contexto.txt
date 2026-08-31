@@ -311,20 +311,22 @@ Evidência verificada:
 ## Empacotamento e distribuição
 O projeto suporta empacotamento automático via PyInstaller para criar executáveis independentes.
 
-**Configuração necessária:**
-- PyInstaller deve estar listado em `requirements.txt` (já configurado)
-- Virtual environment ativo com todas as dependências instaladas
-- Acesso a `customtkinter` no ambiente
+**Build Linux (já compilado):**
+- Executável pronto: `dist/OrganizadorInteligente` (38MB, ELF 64-bit x86-64)
+- Recompilar: `source venv/bin/activate && python construir_executavel.py --linux`
 
-**Processo de build:**
-1. Ativar ambiente virtual: `source venv/bin/activate`
-2. Executar script de automação: `python construir_executavel.py`
-3. Aguardar conclusão da compilação (~2 minutos em máquina típica)
-4. Executável gerado em: `dist/OrganizadorInteligente`
+**Build Windows:**
+- Ver `COMPILAR_WINDOWS.md` para instruções detalhadas
+- Script automatizado: `build_windows.ps1` (executar no PowerShell como Administrador)
+- Ou manualmente: `python construir_executavel.py --windows` (no CMD com venv ativa)
+- Executável gerado em: `dist/OrganizadorInteligente.exe`
+
+**Build Mac:**
+- `source venv/bin/activate && python construir_executavel.py --mac`
 
 **Características do executável:**
 - Binário único e independente (não requer Python instalado)
-- Tamanho: ~37MB em Linux
+- Tamanho: ~38MB em Linux, ~40-45MB em Windows
 - Suporta todos os recursos da aplicação: GUI, organização, geração de resumos com IA
 - Funciona em sistemas com arquitetura x86-64
 - Compatível com distribuição e instalação por usuários finais
