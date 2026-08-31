@@ -9,12 +9,15 @@ def build():
     entry_point = "app.py"
     exe_name = "OrganizadorInteligente"
 
+    # O separador do --add-data e diferente entre Windows (;) e Linux/Mac (:)
+    sep = ";" if os.name == "nt" else ":"
+
     cmd = [
         "pyinstaller",
         "--noconsole",
         "--onefile",
         f"--name={exe_name}",
-        f"--add-data={ctk_path};customtkinter",
+        f"--add-data={ctk_path}{sep}customtkinter",
         entry_point
     ]
 

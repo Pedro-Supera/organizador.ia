@@ -15,6 +15,11 @@ O sistema foi pensado para:
 ## Estrutura do projeto
 - `organizador.py`: núcleo da lógica de organização, extração, proteção de dados, cache, IA, relatórios e controle de operação.
 - `app.py`: interface gráfica com `customtkinter` para executar a organização.
+- **Bug fix (Tkinter/Windows)**: 
+  - `AppUserModelID` definido via `ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID` antes da criação da janela raiz em `OrganizadorApp.__init__`, garantindo o agrupamento correto do ícone na barra de tarefas e eliminando instâncias duplicadas/telas em branco ao iniciar pelo atalho da área de trabalho.
+  - Removida a classe `App` legada (stub com apenas `selecionar_pasta`) para garantir que apenas `OrganizadorApp` seja instanciada.
+  - Consolidado os blocos duplicados `if __name__ == "__main__"` em um único ponto de entrada.
+  - Movido `sys.setrecursionlimit()` e redirecionamento de `sys.stdout`/`sys.stderr` para dentro do bloco `__main__`, evitando efeitos colaterais durante importação.
 - `tests/test_organizador.py`: testes de regressão e comportamento do sistema.
 - `contexto.txt`: documentação operativa do projeto.
 - `.env`: arquivo de configuração local da chave da Groq, quando necessário.
@@ -291,7 +296,9 @@ Evidência verificada:
 ### Auto-revisão de Código
 - `organizador.py`: ✅ Nenhuma secret hardcoded, apenas `getenv()` e `set_key()`
 - `app.py`: ✅ Nenhuma credencial em código, carregadas dinamicamente
-- `construir_executavel.py`: ✅ Seguro, sem dados sensíveis
+- `app.py`: ✅ Bug fix do AppUserModelID aplicado em OrganizadorApp.__init__ com verificacao sys.platform == "win32" e try/except para seguranca em Linux
+- `app.py`: ✅ Classe App legada removida, apenas OrganizadorApp e instanciada
+- `construir_executavel.py`: ✅ Seguro, sem dados sensiveis
 
 ### Preparação para GitHub
 - `README.md`: ✅ Criado com badges, guias de instalação, desenvolvimento e compilação

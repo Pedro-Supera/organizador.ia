@@ -19,29 +19,9 @@ import customtkinter as ctk
 from tkinter import filedialog
 
 import organizador
-class App(ctk.CTk):
-    def __init__(self):
-        super().__init__()
 
-        self.title("Organizador Inteligente")
-        self.geometry("800x600")
 
-        self.wm_class("organizadorinteligente", "OrganizadorInteligente")
 
-    def selecionar_pasta(self):
-        pasta = filedialog.askdirectory(parent=self)
-        if pasta:
-            print(f"Pasta selecionada: {pasta}")
-
-if __name__ == "__main__":
-    ctk.set_appearance_mode("System")
-    ctk.set_default_color_theme("blue")
-    
-    app = App()
-    app.mainloop()
-sys.setrecursionlimit(10000)    
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 def validar_max_files(valor: str) -> int | None:
     """Converte um limite de arquivos válido ou retorna None para ilimitado."""
     valor = valor.strip()
@@ -231,6 +211,18 @@ class OrganizadorApp(ctk.CTk):
     """Janela principal do organizador."""
 
     def __init__(self) -> None:
+        # No Windows, define o AppUserModelID do processo antes de criar a
+        # janela raiz para garantir o agrupamento correto do ícone na
+        # barra de tarefas e evitar instâncias duplicadas ou telas em branco.
+        if sys.platform == "win32":
+            try:
+                import ctypes
+                ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+                    "meuorganizador.app"
+                )
+            except Exception:
+                pass
+
         super().__init__()
         self.title("Organizador Inteligente")
         self.geometry("960x820")
@@ -353,4 +345,8 @@ class OrganizadorApp(ctk.CTk):
 
 
 if __name__ == "__main__":
-    OrganizadorApp().mainloop()
+    sys.setrecursionlimit(10000)
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
+    app = OrganizadorApp()
+    app.mainloop()
