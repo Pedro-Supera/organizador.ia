@@ -351,3 +351,12 @@ O projeto foi validado e preparado para publicação no GitHub com:
 - ✅ Performance otimizada com cache local
 - ✅ Interface gráfica e CLI funcionais
 - ✅ Pronto para distribuição e uso por usuários finais
+
+## Status do Build
+- **Data**: 30/08/2026
+- **Plataforma**: Linux x86-64
+- **Tamanho do executável**: 38.4 MB
+- **Status**: Build concluído com sucesso
+- **Testes**: 31/31 passando
+- **Validação**: Aplicação inicia corretamente sem janelas em branco ou duplicadas
+- **Separador --add-data**: Corrigido para usar : (Linux) e ; (Windows)
