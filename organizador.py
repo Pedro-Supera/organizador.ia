@@ -599,6 +599,7 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
             client = Groq(api_key=api_key)
             executor = ThreadPoolExecutor(max_workers=min(8, len(tarefas_ia)))
             try:
+                # Mapeia cada futuro para (arquivo, chave_cache)
                 futuros = {
                     executor.submit(gerar_resumo, texto, arquivo.name, model, client, logger, api_key): (arquivo, chave_cache)
                     for arquivo, texto, chave_cache in tarefas_ia

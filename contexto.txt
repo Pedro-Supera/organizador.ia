@@ -362,3 +362,8 @@ O projeto foi validado e preparado para publicação no GitHub com:
 - **Testes**: 31/31 passando
 - **Validação**: Aplicação inicia corretamente sem janelas em branco ou duplicadas
 - **Separador --add-data**: Corrigido para usar : (Linux) e ; (Windows)
+## Atualizações de 04/09/2026
+- **Auditoria técnica**: Verificadas credenciais (nenhuma hardcoded), gargalos de memória (gerenciamento de threads e cache otimizado) e bugs (nenhum crítico identificado).
+- **installer.iss**: Criado na raiz para suporte ao Inno Setup 6, permitindo instalação e desinstalação do Organizador Inteligente no Windows.
+- **build_windows.ps1**: Atualizado com suporte automático ao instalador Inno Setup (se o ISCC.exe estiver disponível).
+- **Status do build**: Mantém 31 testes passando, executable funcional em Linux x86-64 (38.4 MB).

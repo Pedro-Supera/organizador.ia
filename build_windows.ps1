@@ -38,6 +38,19 @@ if (Test-Path "OrganizadorInteligente.spec") { Remove-Item "OrganizadorInteligen
 Write-Host "[INFO] Compilando executavel..." -ForegroundColor Yellow
 python construir_executavel.py --windows
 
+# Cria instalador Inno Setup (se o arquivo .iss existir)
+if (Test-Path "installer.iss") {
+    Write-Host "[INFO] Criando instalador com Inno Setup..." -ForegroundColor Yellow
+    & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host "[OK] Instalador criado com sucesso!" -ForegroundColor Green
+    } else {
+        Write-Host "[AVISO] Falha ao criar o instalador. Verifique se o Inno Setup 6 está instalado." -ForegroundColor Yellow
+    }
+} else {
+    Write-Host "[INFO] Arquivo installer.iss não encontrado. Pulando criação do instalador." -ForegroundColor Yellow
+}
+
 # Resultado
 $exe = "dist\OrganizadorInteligente.exe"
 if (Test-Path $exe) {
