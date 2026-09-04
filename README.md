@@ -2,322 +2,279 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests: 31/31](https://img.shields.io/badge/tests-31%2F31-brightgreen.svg)](tests/test_organizador.py)
+[![Tests](https://img.shields.io/badge/tests-passing-brightgreen.svg)](tests/test_organizador.py)
 [![Build: PyInstaller](https://img.shields.io/badge/build-PyInstaller-orange.svg)](construir_executavel.py)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/Pedro-Supera/organizador.ia)
 
-**Organize seus arquivos automaticamente com IA e proteção de dados sensíveis.**
+**Organize arquivos automaticamente com IA, cache local e proteção de dados sensíveis.**
 
-Organizador Inteligente é uma aplicação que classifica arquivos por categoria, extrai conteúdo textual e gera resumos em português usando a API Groq. O projeto prioriza segurança (anonimização de PII, permissões restritas) e eficiência (cache local com SHA-256).
+Aplicação em Python que classifica arquivos por categoria, extrai texto de formatos comuns e gera resumos em português via API Groq. Prioriza privacidade (anonimização de PII antes de qualquer chamada à IA) e eficiência (cache local por SHA-256).
 
-## ✨ Recursos Principais
+**Repositório:** [github.com/Pedro-Supera/organizador.ia](https://github.com/Pedro-Supera/organizador.ia)
 
-- 🗂️ **Organização automática** de arquivos por categoria (PDFs, imagens, documentos, planilhas, compactados)
-- 🤖 **Geração de resumos com IA** em português usando Groq
-- 🔒 **Proteção de dados sensíveis** com anonimização de CPF, CNPJ, email, cartão, etc.
-- ⚡ **Cache inteligente local** baseado em SHA-256 para evitar chamadas duplicadas à API
-- 📊 **Relatórios em Markdown** com estatísticas e métricas operacionais
-- 🎨 **Interface gráfica** intuitiva com CustomTkinter
-- 📦 **Executável independente** empacotado com PyInstaller (sem dependência de Python)
-- ✅ **Testes automatizados** com 31 testes de regressão e cobertura completa
-- ⚙️ **CLI e GUI** para flexibilidade de uso
+---
+
+## Recursos
+
+- Organização automática por categoria (PDFs, imagens, documentos, planilhas, compactados e outros)
+- Resumos em português com Groq (streaming, retries e backoff)
+- Anonimização de CPF, CNPJ, RG, e-mail, telefone, cartão, tokens e datas antes do envio à IA
+- Cache local inteligente (`SHA-256 + modelo`) para evitar chamadas repetidas
+- Relatório consolidado em Markdown e resumos individuais
+- Interface gráfica com CustomTkinter e CLI completa
+- Executável independente via PyInstaller (~38 MB no Linux)
+- Instalador Windows (Inno Setup) e scripts de build multiplataforma
+- Servidor MCP para integração com agentes (Cline e similares)
+- Suite de testes automatizados com pytest
 
 ### Tecnologias
 
-| Tecnologia | Versão | Propósito |
-|---|---|---|
-| **Python** | 3.11+ | Linguagem principal |
-| **CustomTkinter** | Última | Interface gráfica moderna |
-| **Groq API** | v1 | Geração de resumos com IA |
-| **PyInstaller** | 6.22+ | Empacotamento de executável |
-| **Pytest** | 9.1+ | Testes automatizados |
-| **Rich** | Última | Formatação de console |
+| Tecnologia | Uso |
+|---|---|
+| Python 3.11+ | Linguagem principal |
+| CustomTkinter | Interface gráfica |
+| Groq API | Resumos com IA |
+| pypdf, python-docx, python-pptx | Extração de texto |
+| Rich | Logs no terminal |
+| PyInstaller | Empacotamento |
+| pytest | Testes |
+| MCP 2.x | Ferramentas para agentes |
 
-## 🚀 Instalação e Uso via Executável
+---
 
-### Windows, macOS ou Linux (sem Python)
+## Início rápido
 
-**Opção 1: Baixar executável pré-compilado**
-1. Acesse a seção [Releases](../../releases) do repositório
-2. Faça download do `OrganizadorInteligente` para seu sistema operacional
-3. Execute diretamente:
-   ```bash
-   # Linux/macOS
-   ./OrganizadorInteligente
-   
-   # Windows
-   OrganizadorInteligente.exe
-   ```
-
-**Opção 2: Compilar localmente**
-```bash
-# Clone o repositório
-git clone https://github.com/seu-usuario/organizador-ia.git
-cd organizador-ia
-
-# Ative o ambiente virtual
-python -m venv venv
-source venv/bin/activate  # ou venv\Scripts\activate no Windows
-
-# Instale dependências
-pip install -r requirements.txt
-
-# Execute o build
-python construir_executavel.py
-
-# Use o executável gerado
-./dist/OrganizadorInteligente
-```
-
-### Interface Gráfica
-
-1. **Selecione a pasta** que deseja organizar
-2. **Configure a chave Groq** (obtém em https://console.groq.com/keys)
-3. **Escolha o modelo** de IA (padrão: `qwen/qwen3.6-27b`)
-4. **Ative/desative** geração de resumos
-5. **Clique em "Iniciar"** para organizar
-
-### Linha de Comando
+### 1. Clonar e instalar
 
 ```bash
-# Organizar pasta com resumos
-./OrganizadorInteligente ~/Downloads
+git clone https://github.com/Pedro-Supera/organizador.ia.git
+cd organizador.ia
 
-# Simular operação sem mover arquivos
-./OrganizadorInteligente ~/Downloads --dry-run
+python3 -m venv venv
+source venv/bin/activate          # Linux/macOS
+# venv\Scripts\activate           # Windows
 
-# Desativar geração de resumos
-./OrganizadorInteligente ~/Downloads --no-ai
-
-# Limitar quantidade de arquivos
-./OrganizadorInteligente ~/Downloads --max-files 10
-
-# Especificar modelo de IA
-./OrganizadorInteligente ~/Downloads --model "mixtral-8x7b-32768"
-```
-
-### Resultado da Execução
-
-Após a organização, a pasta conterá:
-```
-~/Downloads/
-├── documentos/          # .doc, .docx, .txt, .rtf, .pptx, .html
-├── pdfs/                # .pdf
-├── imagens/             # .jpg, .png, .webp, .gif, .bmp
-├── planilhas/           # .xls, .xlsx, .csv
-├── compactados/         # .zip, .rar, .7z, .tar, .gz
-├── outros/              # Extensões não categorizadas
-├── resumos/             # Arquivos Markdown com resumos gerados
-└── 00_RELATORIO_ORGANIZACAO.md  # Relatório consolidado
-```
-
-## 🛠️ Desenvolvimento e Compilação
-
-### Requisitos
-
-- Python 3.11+
-- pip (gerenciador de pacotes)
-- Virtual environment
-- Git
-
-### Instalação do Ambiente
-
-```bash
-# Clone o repositório
-git clone https://github.com/seu-usuario/organizador-ia.git
-cd organizador-ia
-
-# Crie e ative o virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# ou
-venv\Scripts\activate  # Windows
-
-# Instale as dependências
 pip install -r requirements.txt
 ```
 
-### Execução da Aplicação
+### 2. Configurar a chave Groq (opcional, só se quiser resumos com IA)
+
+1. Crie uma chave em [console.groq.com/keys](https://console.groq.com/keys)
+2. Crie um arquivo `.env` na raiz do projeto:
+
+```env
+GROQ_API_KEY=sua_chave_aqui
+```
+
+Sem a chave, a organização de arquivos continua funcionando; apenas os resumos com IA ficam desativados.
+
+### 3. Executar
 
 ```bash
 # Interface gráfica
 python app.py
 
-# CLI
+# Linha de comando
 python organizador.py ~/Downloads
+
+# Simulação (não move arquivos)
+python organizador.py ~/Downloads --dry-run
+
+# Sem IA
+python organizador.py ~/Downloads --no-ai
+
+# Limitar quantidade de arquivos
+python organizador.py ~/Downloads --max-files 20
+
+# Modelo específico
+python organizador.py ~/Downloads --model "qwen/qwen3.6-27b"
 ```
 
-### Testes Automatizados
+### Resultado típico
 
-```bash
-# Executar todos os testes
-pytest tests/test_organizador.py -v
-
-# Teste específico de PyInstaller
-pytest tests/test_organizador.py::test_caminho_base_suporta_pyinstaller -v
-
-# Modo verbose com cobertura
-pytest tests/test_organizador.py -q
+```text
+~/Downloads/
+├── documentos/
+├── pdfs/
+├── imagens/
+├── planilhas/
+├── compactados/
+├── outros/
+├── resumos/                      # resumos em Markdown
+└── 00_RELATORIO_ORGANIZACAO.md   # relatório consolidado
 ```
-
-**Status atual:** ✅ 31/31 testes passando
-
-### Compilação para Executável
-
-```bash
-# Ativar ambiente virtual
-source venv/bin/activate
-
-# Executar build
-python construir_executavel.py
-
-# Resultado em
-./dist/OrganizadorInteligente
-```
-
-O script `construir_executavel.py`:
-- Localiza `customtkinter` no venv ativo
-- Monta comando PyInstaller com flags apropriadas
-- Cria executável único (`--onefile`)
-- Oculta console (`--noconsole`)
-- Mapeia bibliotecas graficamente dependentes
-
-**Tempo de compilação:** ~2-3 minutos em máquina típica
-
-## 🔒 Segurança e Privacidade
-
-### Anonimização de Dados Sensíveis
-
-Antes de enviar texto para a IA, a aplicação mascara automaticamente:
-- **CPF:** `123.456.789-00` → `[CPF_PROTEGIDO]`
-- **CNPJ:** `12.345.678/0001-99` → `[CNPJ_PROTEGIDO]`
-- **RG:** `12.345.678-X` → `[RG_PROTEGIDO]`
-- **Email:** `user@example.com` → `[EMAIL_PROTEGIDO]`
-- **Telefone:** `(11) 99999-1234` → `[TELEFONE_PROTEGIDO]`
-- **Cartão:** `4111 1111 1111 1111` → `[CARTAO_PROTEGIDO]`
-- **Segredos/Tokens:** Chaves API, senhas → `[SEGREDO_PROTEGIDO]`
-- **Data:** `12/03/1998` → `[DATA_PROTEGIDA]`
-
-### Proteção de Chave da API
-
-- Chave da Groq é armazenada **localmente** com permissões restritas (`0o600`)
-- **Nunca é hardcoded** no código
-- Carregada dinamicamente de `.env` ou `~/.config/organizador-ia/.env`
-- Validada antes de cada chamada à API
-
-### Cache Local
-
-- Resumos são cacheados **localmente** com SHA-256 do conteúdo
-- Evita reprocessamento desnecessário e economia de tokens
-- Chave de cache: `{sha256}_{modelo}`
-
-## 📊 Performance e Eficiência
-
-### Cache Inteligente
-
-```
-Cache Hits:  X/Y (XX%)
-Cache Misses: Y/X (XX%)
-Caracteres salvos: Z
-Tokens salvos: W
-Tempo economizado: ~0.35s por hit
-```
-
-### Limitações Intencionais
-
-- Máximo 50.000 caracteres por arquivo processado
-- Streaming de resposta para feedback em tempo real
-- Retry com backoff exponencial em falhas da API
-- Timeout e tratamento de rate limit da Groq
-
-## 📁 Estrutura do Projeto
-
-```
-organizador-ia/
-├── app.py                          # Interface gráfica (CustomTkinter)
-├── organizador.py                  # Núcleo de lógica e organização
-├── construir_executavel.py         # Script de automação PyInstaller
-├── contexto.txt                    # Documentação operativa
-├── requirements.txt                # Dependências Python
-├── .gitignore                      # Arquivos a ignorar no Git
-├── README.md                       # Este arquivo
-├── tests/
-│   └── test_organizador.py        # Suite de testes (31 testes)
-├── dist/                          # (Gerado) Executável compilado
-├── build/                         # (Gerado) Artefatos intermediários
-└── OrganizadorInteligente.spec    # (Gerado) Configuração PyInstaller
-```
-
-## 🧪 Testes e Validação
-
-### Cobertura de Testes
-
-- ✅ Organização e classificação de arquivos
-- ✅ Extração de texto (PDF, TXT, DOCX, PPTX, HTML, CSV)
-- ✅ Anonimização de PII
-- ✅ Cache local com SHA-256
-- ✅ Geração de resumo com streaming
-- ✅ Retry em falhas temporárias
-- ✅ Cancelamento de operação
-- ✅ Relatórios em Markdown
-- ✅ PyInstaller com `sys._MEIPASS`
-- ✅ Compatibilidade geral
-
-### Comando para Testar
-
-```bash
-# Todos os testes
-pytest tests/test_organizador.py -q
-
-# Com verbose
-pytest tests/test_organizador.py -v
-
-# Teste específico
-pytest tests/test_organizador.py::test_organizador -v
-
-# Com cobertura (se coverage instalado)
-pytest --cov=organizador tests/test_organizador.py
-```
-
-**Resultado:** ✅ 31/31 PASSED (1.15s)
-
-## 🤝 Contribuindo
-
-1. Fork o repositório
-2. Crie uma branch para sua feature (`git checkout -b feature/MinhaFeature`)
-3. Commit suas mudanças (`git commit -am 'Adiciona MinhaFeature'`)
-4. Push para a branch (`git push origin feature/MinhaFeature`)
-5. Abra um Pull Request
-
-### Padrões de Código
-
-- Usar type hints (Python 3.11+)
-- Seguir PEP 8
-- Adicionar testes para novas funcionalidades
-- Documentar funções com docstrings
-- Não hardcoding de secrets
-
-## 📝 Licença
-
-Este projeto está licenciado sob a [MIT License](LICENSE).
-
-## 🙋 Suporte
-
-- 📧 Email: seu-email@example.com
-- 🐛 Issues: [Abrir uma issue](../../issues)
-- 💬 Discussions: [Abrir discussão](../../discussions)
-
-## 📌 Changelog
-
-### v1.0.0 (2026-08-29)
-- ✅ Lançamento inicial
-- ✅ Organização automática de arquivos
-- ✅ Geração de resumos com Groq
-- ✅ Proteção de PII com anonimização
-- ✅ Cache local inteligente
-- ✅ Interface gráfica com CustomTkinter
-- ✅ Executável empacotado com PyInstaller
-- ✅ 31 testes de cobertura completa
 
 ---
 
-**Desenvolvido com ❤️ em Python 3.11+**
+## Executável (sem instalar Python)
+
+### Linux
+
+```bash
+source venv/bin/activate
+python construir_executavel.py --linux
+./dist/OrganizadorInteligente
+```
+
+### Windows
+
+Veja o guia completo em [`COMPILAR_WINDOWS.md`](COMPILAR_WINDOWS.md).
+
+Resumo:
+
+```powershell
+# PowerShell (preferencialmente como Administrador)
+.\build_windows.ps1
+```
+
+Ou:
+
+```bat
+python construir_executavel.py --windows
+```
+
+O instalador Inno Setup (`installer.iss`) pode ser gerado automaticamente se o `ISCC.exe` estiver disponível.
+
+### macOS
+
+```bash
+source venv/bin/activate
+python construir_executavel.py --mac
+```
+
+> O PyInstaller gera binário nativo da plataforma em que o build roda. Não use flags de outra SO na mesma máquina.
+
+---
+
+## Testes
+
+```bash
+source venv/bin/activate
+pytest tests/test_organizador.py -v
+```
+
+Cobertura principal:
+
+- classificação por extensão e destinos seguros
+- extração de PDF, TXT, DOCX, PPTX, HTML e CSV
+- anonimização de dados sensíveis
+- cache local (SHA-256 + modelo)
+- streaming e retry da IA
+- dry-run, cancelamento e limite de arquivos
+- relatórios Markdown
+- compatibilidade com PyInstaller (`sys._MEIPASS`)
+
+Validação recente da release v1.0.0: suite de regressão passando.
+
+---
+
+## Segurança e privacidade
+
+Antes de qualquer envio à API, o texto passa por anonimização local:
+
+| Dado | Marcador |
+|------|----------|
+| CPF | `[CPF_PROTEGIDO]` |
+| CNPJ | `[CNPJ_PROTEGIDO]` |
+| RG | `[RG_PROTEGIDO]` |
+| E-mail | `[EMAIL_PROTEGIDO]` |
+| Telefone | `[TELEFONE_PROTEGIDO]` |
+| Cartão | `[CARTAO_PROTEGIDO]` |
+| Tokens/senhas | `[SEGREDO_PROTEGIDO]` |
+| Datas | `[DATA_PROTEGIDA]` |
+
+Outras práticas:
+
+- chave da API só via `.env` / ambiente (nunca hardcoded)
+- permissões restritas ao gravar a chave
+- cache e relatórios ficam na pasta processada
+- arquivos internos do projeto são ignorados na organização
+
+---
+
+## Estrutura do projeto
+
+```text
+organizador.ia/
+├── app.py                    # Interface gráfica (CustomTkinter)
+├── organizador.py            # Núcleo: organização, IA, cache, relatórios
+├── mcp_organizador.py        # Servidor MCP (contexto e distribuição)
+├── construir_executavel.py   # Build PyInstaller multiplataforma
+├── build_windows.ps1         # Automação de build no Windows
+├── installer.iss             # Instalador Inno Setup (Windows)
+├── COMPILAR_WINDOWS.md       # Guia de compilação Windows
+├── contexto.txt              # Documentação operativa interna
+├── requirements.txt
+├── README.md
+├── LICENSE
+├── .gitignore
+├── .github/workflows/        # CI de build
+└── tests/
+    └── test_organizador.py
+```
+
+---
+
+## Integração MCP (agentes)
+
+O arquivo `mcp_organizador.py` expõe um servidor MCP local (stdio) com ferramentas como:
+
+- `ler_contexto`
+- `atualizar_contexto`
+- `listar_arquivos_dist`
+
+Útil para agentes (ex.: Cline) trabalharem no workspace sem embutir credenciais na configuração.
+
+---
+
+## CLI — opções
+
+| Opção | Descrição |
+|-------|-----------|
+| `caminho` | Pasta a organizar |
+| `-d`, `--dry-run` | Simula sem mover arquivos nem gravar resumos |
+| `--no-ai` | Desativa geração de resumos |
+| `--model` | Modelo Groq (padrão: `qwen/qwen3.6-27b`) |
+| `--max-files` | Limita quantos arquivos processar |
+
+---
+
+## Contribuindo
+
+1. Faça um fork (se o repositório estiver público) ou clone
+2. Crie uma branch: `git checkout -b feature/minha-melhoria`
+3. Rode os testes antes do commit
+4. Abra um Pull Request com descrição clara
+
+Padrões:
+
+- type hints (Python 3.11+)
+- PEP 8
+- testes para comportamento novo
+- zero secrets no código
+
+---
+
+## Licença
+
+Distribuído sob a licença [MIT](LICENSE).
+
+---
+
+## Changelog
+
+### v1.0.0 (2026-09-04)
+
+- Organização automática por categoria
+- Resumos com Groq (streaming + retry)
+- Anonimização de PII
+- Cache local por conteúdo e modelo
+- GUI (CustomTkinter) e CLI
+- Empacotamento PyInstaller (Linux validado)
+- Scripts e instalador Windows (Inno Setup)
+- Servidor MCP para agentes
+- Suite de testes de regressão
+
+---
+
+Desenvolvido por [Pedro-Supera](https://github.com/Pedro-Supera) · Python 3.11+
