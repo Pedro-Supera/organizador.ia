@@ -389,3 +389,15 @@ O projeto foi validado e preparado para publicação no GitHub com:
 - Ferramentas disponiveis: `ler_contexto`, `atualizar_contexto` e `listar_arquivos_dist`.
 - A configuracao usa o interpretador `venv/bin/python` do projeto e nao contem credenciais.
 - A colaboracao entre agentes ocorre pelo workspace compartilhado, pelo estado do Git e por este servidor MCP; cada agente deve validar alteracoes antes de commit e push.
+
+## Revisao da GUI e progresso real
+- `app.py` teve imports duplicados e estado sem uso removidos.
+- `organizador.py` agora envia progresso absoluto entre `0.0` e `1.0`; a GUI exibe barra e contador no formato `x/y arquivos`.
+- A GUI recebeu cartões escuros consistentes, hierarquia visual no cabeçalho, botão primário destacado e estados de execução concluído, cancelado e erro.
+- Novo teste garante progresso monotônico e conclusão em `1.0`.
+- Validacao em 04/09/2026: 34 testes passando, compilacao Python concluida e diagnosticos sem erros.
+
+### Solicitacao de revisao ao Cline
+Revisar o diff atual de `app.py`, `organizador.py` e `tests/test_organizador.py`, com foco em regressao de dry-run, cancelamento, CLI, responsividade da GUI e compatibilidade PyInstaller. Registrar achados no workspace antes de qualquer novo commit.
+- Revisao compartilhada: progresso do dry-run com IA corrigido para concluir em 1.0.
+- Pendencia conhecida: cancelamento durante chamada de IA em andamento pode aguardar a tarefa de rede; manter validacao futura sem alterar a UX desta entrega.

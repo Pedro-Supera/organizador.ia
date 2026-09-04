@@ -215,6 +215,23 @@ def test_organizar_pasta_dry_run_nao_move_arquivos(tmp_path):
     assert not (tmp_path / "documentos" / arquivo.name).exists()
 
 
+def test_progresso_e_absoluto_e_termina_em_um(tmp_path):
+    for nome in ("a.txt", "b.txt"):
+        (tmp_path / nome).write_text("conteudo suficiente para resumo", encoding="utf-8")
+    progresso = []
+
+    organizador.organizar_pasta(
+        tmp_path,
+        dry_run=True,
+        progresso=progresso.append,
+    )
+
+    assert progresso
+    assert all(0.0 <= valor <= 1.0 for valor in progresso)
+    assert progresso == sorted(progresso)
+    assert progresso[-1] == 1.0
+
+
 @patch("organizador.Groq")
 def test_dry_run_com_cache_nao_cria_resumo(mock_groq, tmp_path, monkeypatch):
     monkeypatch.setenv("GROQ_API_KEY", "chave-de-teste")

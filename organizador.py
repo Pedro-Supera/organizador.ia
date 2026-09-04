@@ -549,10 +549,8 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
         texto = extrair_texto(arquivo, logger) if arquivo.suffix.lower() in extensoes_texto else ""
         sha256 = calcular_sha256(arquivo) if texto else ""
         planos.append((arquivo, categoria, destino, texto, sha256))
-        if progresso:
-            progresso(indice / (len(arquivos) * 2))
     movidos = 0
-    for arquivo, categoria, destino, _, _ in planos:
+    for indice, (arquivo, categoria, destino, _, _) in enumerate(planos, 1):
         if cancel_event and cancel_event.is_set():
             raise OperacaoCancelada
         if dry_run:
@@ -565,6 +563,8 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
                 logger.info(f"Movido: {arquivo.name} -> {categoria}/{destino.name}")
             except OSError as erro:
                 logger.error(f"Falha ao mover {arquivo.name}: {erro}")
+        if progresso:
+            progresso(indice / len(planos))
     resumos: set[str] = set()
     resumos_falha = 0
     resumos_sucesso = 0
@@ -600,14 +600,14 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
             resumo_path = proximo_destino(pasta_resumos / f"resumo_{nome_seguro}.md")
             logger.info(f"[SIMULAÇÃO] Criaria resumo em {resumo_path}")
         if progresso:
-            progresso(0.5)
+            progresso(1.0)
     elif tarefas_ia:
         carregar_ambiente()
         api_key = os.getenv("GROQ_API_KEY")
         if not api_key:
             logger.warning("GROQ_API_KEY não configurada; resumos de IA ignorados.")
             if progresso:
-                progresso(0.5)
+                progresso(1.0)
         else:
             client = Groq(api_key=api_key)
             executor = ThreadPoolExecutor(max_workers=min(8, len(tarefas_ia)))
@@ -632,11 +632,11 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
                     if resumo is None or resumo.startswith("Erro"):
                         resumos_falha += 1
                     if progresso:
-                        progresso(indice / (len(tarefas_ia) * 2))
+                        progresso(1.0)
             finally:
                 executor.shutdown(wait=False, cancel_futures=True)
     elif progresso:
-        progresso(0.5)
+        progresso(1.0)
     contagem = Counter(categoria for _, categoria, _, _, _ in planos)
     logger.info(f"Concluído: {movidos} arquivo(s) movido(s); {len(resumos)} resumo(s) criado(s).")
     for categoria in sorted(contagem):
