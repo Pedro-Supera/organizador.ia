@@ -131,10 +131,19 @@ def caminho_base() -> Path:
     return Path(__file__).resolve().parent
 
 
+def caminho_dados_persistentes() -> Path:
+    """Retorna o diretório persistente para configuração e cache do usuário."""
+    if os.name == "nt":
+        raiz = Path(os.getenv("APPDATA", Path.home() / "AppData" / "Roaming"))
+    else:
+        raiz = Path(os.getenv("XDG_CONFIG_HOME", Path.home() / ".config"))
+    return raiz / "organizador-ia"
+
+
 def caminhos_env() -> tuple[Path, Path]:
     """Retorna os caminhos principal e alternativo para configuração da API."""
     principal = caminho_base() / ".env"
-    alternativo = Path.home() / ".config" / "organizador-ia" / ".env"
+    alternativo = caminho_dados_persistentes() / ".env"
     return principal, alternativo
 
 
@@ -172,9 +181,10 @@ def obter_caminho_cache(base_dir: str | Path | None = None) -> Path:
     except OSError:
         pass
 
-    caminho_home = Path.home() / ".cache_resumos.json"
+    caminho_home = caminho_dados_persistentes() / ".cache_resumos.json"
     try:
-        if os.access(Path.home(), os.W_OK):
+        caminho_home.parent.mkdir(parents=True, exist_ok=True)
+        if os.access(caminho_home.parent, os.W_OK):
             return caminho_home
     except OSError:
         pass
@@ -242,7 +252,11 @@ def listar_arquivos_elegiveis(caminho_pasta: str | Path, max_files: int | None =
     if not pasta.is_dir():
         raise ValueError(f"A pasta '{pasta}' não existe ou não é um diretório.")
     arquivos = sorted(
-        (item for item in pasta.iterdir() if item.is_file() and item.name not in ARQUIVOS_INTERNOS),
+        (
+            item
+            for item in pasta.iterdir()
+            if item.is_file() and not item.is_symlink() and item.name not in ARQUIVOS_INTERNOS
+        ),
         key=lambda item: item.name.lower(),
     )
     if isinstance(max_files, int) and max_files > 0:

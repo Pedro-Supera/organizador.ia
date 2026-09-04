@@ -58,6 +58,19 @@ def test_listar_arquivos_elegiveis_ignora_artefatos_do_projeto(tmp_path):
     assert [arquivo.name for arquivo in arquivos] == ["nota.txt"]
 
 
+def test_listar_arquivos_elegiveis_ignora_links_simbolicos(tmp_path):
+    externo = tmp_path / "externo"
+    pasta = tmp_path / "entrada"
+    pasta.mkdir()
+    externo.write_text("conteudo externo", encoding="utf-8")
+    (pasta / "atalho.txt").symlink_to(externo)
+    (pasta / "local.txt").write_text("conteudo local", encoding="utf-8")
+
+    arquivos = organizador.listar_arquivos_elegiveis(pasta)
+
+    assert [arquivo.name for arquivo in arquivos] == ["local.txt"]
+
+
 def test_salvar_chave_api_permissoes(tmp_path, monkeypatch):
     caminho_env = tmp_path / ".env"
     monkeypatch.setattr(organizador, "caminho_env_gravavel", lambda: caminho_env)
@@ -66,6 +79,12 @@ def test_salvar_chave_api_permissoes(tmp_path, monkeypatch):
     assert os.environ["GROQ_API_KEY"] == "chave-de-teste"
     if os.name != "nt":
         assert os.stat(caminho_env).st_mode & 0o777 == 0o600
+
+
+def test_caminho_dados_persistentes_respeita_config_home(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
+
+    assert organizador.caminho_dados_persistentes() == tmp_path / "organizador-ia"
 
 
 def test_extrair_texto_txt_latin1(tmp_path):
