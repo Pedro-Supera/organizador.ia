@@ -24,9 +24,8 @@ def build(platform_target=None):
     # O separador do --add-data e diferente entre Windows (;) e Linux/Mac (:)
     sep = ";" if os.name == "nt" else ":"
 
-    # Adiciona extensao .exe quando compilar no Windows
+    # O PyInstaller adiciona .exe automaticamente no Windows.
     if target == "windows":
-        exe_name = "OrganizadorInteligente.exe"
         sep = ";"
 
     cmd = [
@@ -43,7 +42,8 @@ def build(platform_target=None):
 
     try:
         subprocess.run(cmd, check=True)
-        print(f"[OK] Executavel criado com sucesso: dist/{exe_name}")
+        extensao = ".exe" if target == "windows" else ""
+        print(f"[OK] Executavel criado com sucesso: dist/{exe_name}{extensao}")
     except subprocess.CalledProcessError as e:
         print(f"[ERRO] Falha ao criar o executavel: {e}")
         sys.exit(1)
