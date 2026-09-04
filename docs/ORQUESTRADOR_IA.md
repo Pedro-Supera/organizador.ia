@@ -41,3 +41,38 @@ continua pelo workspace compartilhado, `contexto.txt` e
 
 Nunca coloque tokens, chaves de API, logs com segredos ou arquivos `.env` no
 estado da equipe.
+
+
+## Exemplos de conexão
+
+### Cline
+
+Adicione um servidor stdio na configuração MCP do Cline e troque o caminho pelo
+local do clone:
+
+```json
+{
+  "mcpServers": {
+    "organizador-inteligente": {
+      "command": "/caminho/do/projeto/venv/bin/python",
+      "args": ["/caminho/do/projeto/mcp_organizador.py"]
+    }
+  }
+}
+```
+
+No Windows, use `venv\\Scripts\\python.exe`. Não inclua chave de API nessa
+configuração.
+
+### Codex
+
+Registre o mesmo comando como servidor MCP local. O Codex pode chamar
+`ler_contexto`, `criar_tarefa_ia`, `assumir_proxima_tarefa_ia`,
+`concluir_tarefa_ia` e `registrar_decisao_ia`.
+
+### Copilot
+
+A disponibilidade de consumo de MCP varia por produto e edição do Copilot.
+Quando MCP não estiver disponível, use o mesmo clone: leia `contexto.txt`,
+edite o código e peça ao Cline ou Codex para registrar a decisão/tarefa. Assim
+o handoff continua auditável sem depender de integração proprietária.
