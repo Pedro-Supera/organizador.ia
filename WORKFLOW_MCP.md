@@ -18,6 +18,8 @@ Use identificadores estáveis:
 4. O destinatário marca a mensagem original como lida com `marcar_mensagem_lida`.
 5. Antes de commit ou push, o agente deve executar testes, verificar `git diff` e avisar sobre conflitos ou mudanças remotas.
 
+Para o fluxo padrão Copilot -> Cline, prefira `solicitar_revisao(escopo, arquivos, criterios, comandos)`. Essa ferramenta monta o hand-off no formato esperado e deixa a mensagem pendente para o cliente Cline.
+
 ## Formato recomendado
 
 Assunto: `[handoff] escopo curto`
@@ -33,6 +35,8 @@ Resultado esperado:
 ```
 
 Não inclua chaves, tokens ou conteúdo de `.env`. O mailbox é um canal de coordenação local, não um mecanismo de autenticação ou autorização.
+
+O disparo automático do Cline depende do cliente Cline estar ativo e consultar o mailbox. O MCP não consegue iniciar ou conversar diretamente com outro modelo.
 
 ## Exemplo
 

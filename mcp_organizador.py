@@ -81,6 +81,20 @@ def publicar_mensagem(remetente: str, destinatario: str, assunto: str, conteudo:
 
 
 @mcp.tool()
+def solicitar_revisao(escopo: str, arquivos: str, criterios: str, comandos: str) -> str:
+    """Cria um hand-off padronizado do Copilot para o Cline."""
+    conteudo = (
+        f"Objetivo:\n{escopo}\n\n"
+        f"Arquivos permitidos:\n{arquivos}\n\n"
+        f"Critérios de aceite:\n{criterios}\n\n"
+        f"Comandos de validação:\n{comandos}\n\n"
+        "Responda publicando uma mensagem para copilot com achados, testes e riscos. "
+        "Não faça force-push nem altere credenciais."
+    )
+    return publicar_mensagem("copilot", "cline", "[handoff] revisão automatizada", conteudo)
+
+
+@mcp.tool()
 def ler_mensagens(destinatario: str, apenas_nao_lidas: bool = True) -> str:
     """Lê mensagens destinadas ao agente informado."""
     mensagens = [
