@@ -246,6 +246,29 @@ def salvar_chave_api(chave: str) -> bool:
         return False
 
 
+def resolver_pastas_principais(home: Path | None = None) -> tuple[list[Path], list[str]]:
+    """Resolve pastas comuns do usuario (Linux/Windows) para o modo 'principais'.
+
+    Inclui apenas Desktop, Downloads, Documents e Pictures. Music e Videos sao
+    adicionados se existirem. NUNCA varre raiz do sistema. Pastas inexistentes sao
+    ignoradas com aviso.
+
+    Retorna (pastas_encontradas, avisos).
+    """
+    raiz = Path(home).expanduser().resolve() if home else Path.home()
+    nomes = ["Desktop", "Downloads", "Documents", "Pictures", "Music", "Videos"]
+    pastas: list[Path] = []
+    avisos: list[str] = []
+    for nome in nomes:
+        candidato = raiz / nome
+        try:
+            if candidato.is_dir():
+                pastas.append(candidato)
+        except OSError:
+            avisos.append(f"Nao foi possivel acessar {candidato}")
+    return pastas, avisos
+
+
 def listar_arquivos_elegiveis(caminho_pasta: str | Path, max_files: int | None = None) -> list[Path]:
     """Lista arquivos elegíveis, ordenados e opcionalmente limitados."""
     pasta = Path(caminho_pasta).expanduser().resolve()

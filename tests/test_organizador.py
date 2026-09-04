@@ -492,3 +492,35 @@ def test_caminho_base_suporta_pyinstaller(monkeypatch, tmp_path):
             sys._MEIPASS = original_meipass
         if original_frozen is not None:
             sys.frozen = original_frozen
+
+def test_resolver_pastas_principais_todas_existem(tmp_path):
+    """Retorna todas as 6 pastas quando todas existem."""
+    for nome in ["Desktop", "Downloads", "Documents", "Pictures", "Music", "Videos"]:
+        (tmp_path / nome).mkdir()
+    pastas, avisos = organizador.resolver_pastas_principais(tmp_path)
+    assert len(pastas) == 6
+    assert avisos == []
+
+
+def test_resolver_pastas_principais_parcial(tmp_path):
+    """Retorna só as pastas que existem."""
+    (tmp_path / "Desktop").mkdir()
+    (tmp_path / "Downloads").mkdir()
+    pastas, avisos = organizador.resolver_pastas_principais(tmp_path)
+    nomes = {p.name for p in pastas}
+    assert nomes == {"Desktop", "Downloads"}
+    assert avisos == []
+
+
+def test_resolver_pastas_principais_nenhuma_existe(tmp_path):
+    """Retorna lista vazia quando nenhuma pasta existe."""
+    pastas, avisos = organizador.resolver_pastas_principais(tmp_path)
+    assert pastas == []
+    assert avisos == []
+
+
+def test_resolver_pastas_principais_nao_varre_raiz(tmp_path):
+    """Nunca retorna pastas fora de Path.home()."""
+    pastas, _ = organizador.resolver_pastas_principais(tmp_path)
+    for p in pastas:
+        assert str(tmp_path) in str(p), f"Pasta fora do home: {p}"

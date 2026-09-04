@@ -79,27 +79,123 @@ class HeaderFrame(ctk.CTkFrame):
 
 
 class DirectorySelectionFrame(ctk.CTkFrame):
-    """Controla a seleção da pasta de trabalho."""
+    """Permite escolher UMA pasta, VARIAS pastas ou os arquivos principais do usuario."""
 
-    def __init__(self, master: ctk.CTkBaseClass, pasta_var: ctk.StringVar) -> None:
+    MODOS = ["Uma pasta", "Varias pastas", "Principais"]
+
+    def __init__(self, master: ctk.CTkBaseClass, pasta_var: ctk.StringVar,
+                 ao_mudar: Callable[[], None] | None = None) -> None:
         super().__init__(master, fg_color=COR_CARTAO, border_width=1, border_color=COR_BORDA, corner_radius=12)
         self.pasta_var = pasta_var
+        self.ao_mudar = ao_mudar or (lambda: None)
+        self.lista_pastas: list[str] = []
+        self.modo_var = ctk.StringVar(value=self.MODOS[0])
         self.grid_columnconfigure(0, weight=1)
-        self.entrada = ctk.CTkEntry(self, textvariable=pasta_var, state="readonly")
-        self.botao = ctk.CTkButton(self, text="Procurar...", width=120, command=self._procurar)
-        ctk.CTkLabel(self, text="Pasta para organizar", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=2, padx=16, pady=(14, 6), sticky="w")
-        self.entrada.grid(row=1, column=0, padx=(16, 8), pady=(0, 14), sticky="ew")
-        self.botao.grid(row=1, column=1, padx=(0, 16), pady=(0, 14))
+        ctk.CTkLabel(self, text="Onde organizar", font=ctk.CTkFont(weight="bold")).grid(
+            row=0, column=0, padx=16, pady=(14, 6), sticky="w")
+        self.segmented = ctk.CTkSegmentedButton(self, values=self.MODOS, variable=self.modo_var,
+                                                  command=self._trocar_modo, width=240)
+        self.segmented.grid(row=1, column=0, padx=16, pady=(0, 8), sticky="w")
+        ctk.CTkLabel(self, text="O app NAO altera arquivos do sistema. Move apenas conteudo das pastas escolhidas.",
+                      text_color=COR_TEXTO_SECUNDARIO, font=ctk.CTkFont(size=11)).grid(
+            row=2, column=0, padx=16, pady=(0, 8), sticky="w")
+        # Sub-frame dinamico para o modo escolhido
+        self.subframe = ctk.CTkFrame(self, fg_color="transparent")
+        self.subframe.grid(row=3, column=0, padx=16, pady=(0, 14), sticky="ew")
+        self.subframe.grid_columnconfigure(0, weight=1)
+        # Constroi os 3 sub-frames
+        self._frame_unica = self._criar_frame_unica()
+        self._frame_multipla = self._criar_frame_multipla()
+        self._frame_principais = self._criar_frame_principais()
+        self._trocar_modo(self.MODOS[0])
+
+    def _criar_frame_unica(self) -> ctk.CTkFrame:
+        wrapper = ctk.CTkFrame(self.subframe, fg_color="transparent")
+        wrapper.grid_columnconfigure(0, weight=1)
+        self.entrada = ctk.CTkEntry(wrapper, textvariable=self.pasta_var, state="readonly")
+        self.entrada.grid(row=0, column=0, sticky="ew")
+        ctk.CTkButton(wrapper, text="Procurar...", width=120, command=self._procurar).grid(
+            row=0, column=1, padx=(8, 0))
+        return wrapper
+
+    def _criar_frame_multipla(self) -> ctk.CTkFrame:
+        wrapper = ctk.CTkFrame(self.subframe, fg_color="transparent")
+        wrapper.grid_columnconfigure(0, weight=1)
+        self.lista_box = ctk.CTkTextbox(wrapper, height=80, state="disabled")
+        self.lista_box.grid(row=0, column=0, sticky="ew")
+        botoes = ctk.CTkFrame(wrapper, fg_color="transparent")
+        botoes.grid(row=1, column=0, pady=(8, 0), sticky="w")
+        ctk.CTkButton(botoes, text="Adicionar pasta", command=self._adicionar_pasta).pack(side="left", padx=(0, 8))
+        ctk.CTkButton(botoes, text="Limpar lista", fg_color="#374151",
+                       command=self._limpar_lista).pack(side="left")
+        return wrapper
+
+    def _criar_frame_principais(self) -> ctk.CTkFrame:
+        wrapper = ctk.CTkFrame(self.subframe, fg_color="transparent")
+        wrapper.grid_columnconfigure(0, weight=1)
+        self.principais_info = ctk.CTkLabel(wrapper,
+            text="Inclui: Desktop, Downloads, Documents, Pictures e, se existirem, Music e Videos.",
+            text_color=COR_TEXTO_SECUNDARIO, font=ctk.CTkFont(size=12), justify="left")
+        self.principais_info.grid(row=0, column=0, sticky="w")
+        return wrapper
+
+    def _trocar_modo(self, modo: str) -> None:
+        """Mostra o sub-frame correspondente ao modo escolhido."""
+        for f in (self._frame_unica, self._frame_multipla, self._frame_principais):
+            f.grid_forget()
+        if modo == self.MODOS[0]:
+            self._frame_unica.grid(row=0, column=0, sticky="ew")
+        elif modo == self.MODOS[1]:
+            self._frame_multipla.grid(row=0, column=0, sticky="ew")
+        else:
+            self._frame_principais.grid(row=0, column=0, sticky="ew")
+        self.ao_mudar()
 
     def _procurar(self) -> None:
         pasta = filedialog.askdirectory(title="Selecione a pasta para organizar")
         if pasta:
             self.pasta_var.set(pasta)
+            self.ao_mudar()
+
+    def _adicionar_pasta(self) -> None:
+        pasta = filedialog.askdirectory(title="Selecione uma pasta para adicionar")
+        if pasta and pasta not in self.lista_pastas:
+            self.lista_pastas.append(pasta)
+            self._atualizar_lista()
+            self.ao_mudar()
+
+    def _limpar_lista(self) -> None:
+        self.lista_pastas.clear()
+        self._atualizar_lista()
+        self.ao_mudar()
+
+    def _atualizar_lista(self) -> None:
+        texto = "\n".join(self.lista_pastas) if self.lista_pastas else "(nenhuma pasta)"
+        self.lista_box.configure(state="normal")
+        self.lista_box.delete("1.0", "end")
+        self.lista_box.insert("1.0", texto)
+        self.lista_box.configure(state="disabled")
+
+    def pastas_selecionadas(self) -> list[str]:
+        """Retorna a lista de pastas a organizar conforme o modo atual."""
+        modo = self.modo_var.get()
+        if modo == self.MODOS[0]:
+            pasta = self.pasta_var.get().strip()
+            return [pasta] if pasta else []
+        if modo == self.MODOS[1]:
+            return list(self.lista_pastas)
+        # Principais: resolver em tempo real
+        pastas, _ = organizador.resolver_pastas_principais()
+        return [str(p) for p in pastas]
 
     def definir_estado(self, estado: str) -> None:
         """Ativa ou bloqueia os controles do frame."""
         self.entrada.configure(state="normal" if estado == "normal" else "disabled")
-        self.botao.configure(state=estado)
+        try:
+            for botao in self._frame_multipla.winfo_children()[1].winfo_children():
+                botao.configure(state=estado)
+        except (IndexError, AttributeError):
+            pass
 
 
 class SettingsFrame(ctk.CTkFrame):
@@ -230,14 +326,25 @@ class StatisticsFrame(ctk.CTkFrame):
         self.abrir.grid(row=0, column=1, padx=14, pady=8)
         self.destino = ""
 
-    def atualizar(self, estatisticas: organizador.Estatisticas, duracao: float) -> None:
+    def atualizar(self, estatisticas: list[organizador.Estatisticas] | organizador.Estatisticas,
+                  duracao: float) -> None:
         """Atualiza as estatísticas apresentadas ao usuário."""
-        categorias = ", ".join(f"{chave}: {valor}" for chave, valor in estatisticas["por_categoria"].items()) or "nenhuma"
-        self.texto.configure(text=(f"Tempo: {duracao:.1f}s | Movidos: {estatisticas['movidos']} | "
-                                   f"Resumos: {estatisticas['resumos_sucesso']} sucesso(s), {estatisticas['resumos_falha']} falha(s) | "
+        if isinstance(estatisticas, dict):
+            estatisticas = [estatisticas]
+        movidos = sum(e["movidos"] for e in estatisticas)
+        sucessos = sum(e["resumos_sucesso"] for e in estatisticas)
+        falhas = sum(e["resumos_falha"] for e in estatisticas)
+        contagem: dict[str, int] = {}
+        for e in estatisticas:
+            for cat, qtd in e["por_categoria"].items():
+                contagem[cat] = contagem.get(cat, 0) + qtd
+        categorias = ", ".join(f"{k}: {v}" for k, v in contagem.items()) or "nenhuma"
+        plural = "s" if len(estatisticas) > 1 else ""
+        self.texto.configure(text=(f"{len(estatisticas)} pasta{plural} | Tempo: {duracao:.1f}s | Movidos: {movidos} | "
+                                   f"Resumos: {sucessos} OK, {falhas} falha(s) | "
                                    f"Categorias: {categorias}"))
-        self.destino = estatisticas["destino"]
-        self.abrir.configure(state="normal")
+        self.destino = estatisticas[-1]["destino"] if estatisticas else ""
+        self.abrir.configure(state="normal" if self.destino else "disabled")
 
     def _abrir(self) -> None:
         """Abre a pasta de destino no gerenciador de arquivos."""
@@ -317,43 +424,73 @@ class OrganizadorApp(ctk.CTk):
         return True
 
     def _iniciar(self) -> None:
-        pasta = self.pasta_var.get().strip()
-        if not pasta or not Path(pasta).is_dir():
-            messagebox.showwarning("Pasta inválida", "Selecione uma pasta válida antes de iniciar.")
+        pastas = self.pasta_frame.pastas_selecionadas()
+        if not pastas:
+            messagebox.showwarning("Nenhuma pasta", "Selecione ou configure pastas antes de iniciar.")
             return
         try:
             max_files = validar_max_files(self.max_files_var.get())
         except ValueError as erro:
             messagebox.showwarning("Limite inválido", str(erro))
             return
-        arquivos = organizador.listar_arquivos_elegiveis(pasta, max_files)
-        quantidade = len(arquivos)
-        if not messagebox.askyesno("Confirmar organização", f"Serão processados {quantidade} arquivo(s). Deseja continuar?"):
+        # max_files limita arquivos por execucao (regra global; documentada no codigo)
+        resumo: list[str] = []
+        total_geral = 0
+        for p in pastas:
+            try:
+                qtd = len(organizador.listar_arquivos_elegiveis(p, None))
+            except (ValueError, OSError):
+                qtd = 0
+            total_geral += qtd
+            nome = Path(p).name or p
+            resumo.append(f"  {nome}: {qtd} arquivo(s)")
+        if total_geral == 0:
+            messagebox.showwarning("Nenhum arquivo", "Nenhum arquivo elegivel encontrado nas pastas selecionadas.")
+            return
+        msg = f"Resumo das pastas a organizar:\n\n" + "\n".join(resumo) + f"\n\nTotal: {total_geral} arquivo(s)\n\nContinuar?"
+        if not messagebox.askyesno("Confirmar organização", msg):
             return
         if not self._salvar_chave():
             return
         self.estado = "executando"
-        self.total_arquivos = quantidade
+        self.total_arquivos = total_geral
+        self.pastas_para_organizar = pastas
+        self.pasta_idx = 0
         self.cancelamento.clear()
         self._definir_estado_interface("disabled")
         self.controles.cancelar.configure(state="normal")
         self.controles.atualizar_progresso(0.0, self.total_arquivos)
-        self.controles.atualizar_status(f"0/{self.total_arquivos} arquivos", COR_INFO)
-        configuracoes = (self.teste_var.get(), not self.ia_var.get(), self.modelo_var.get(), max_files)
-        inicio = datetime.now()
-        threading.Thread(target=self._executar, args=(pasta, configuracoes, inicio), daemon=True).start()
+        self.controles.atualizar_status(f"Processando 0/{len(pastas)} pastas...", COR_INFO)
+        threading.Thread(target=self._executar, daemon=True).start()
 
-    def _executar(self, pasta: str, configuracoes: tuple[bool, bool, str, int | None], inicio: datetime) -> None:
-        dry_run, no_ai, modelo, max_files = configuracoes
+    def _executar(self) -> None:
+        dry_run = self.teste_var.get()
+        no_ai = not self.ia_var.get()
+        modelo = self.modelo_var.get()
+        max_files = self.max_files_var.get().strip()
+        max_files_val = validar_max_files(max_files)
         logger = GuiLogger(self.eventos)
+        inicio = datetime.now()
+        resultados = []
         try:
-            resultado = organizador.organizar_pasta(pasta, dry_run=dry_run, no_ai=no_ai, model=modelo, max_files=max_files,
-                                                    logger=logger, progresso=lambda valor: self.eventos.put(("progresso", valor)),
-                                                    cancel_event=self.cancelamento)
-            self.eventos.put(("estatisticas", (resultado, (datetime.now() - inicio).total_seconds())))
-            self.eventos.put(("fim", "Organização concluída."))
+            for idx, pasta in enumerate(self.pastas_para_organizar, 1):
+                if self.cancelamento.is_set():
+                    raise organizador.OperacaoCancelada
+                self.pasta_idx = idx
+                self.eventos.put(("log", f"[{datetime.now().strftime('%H:%M:%S')}] INFO: Iniciando pasta {idx}/{len(self.pastas_para_organizar)}: {pasta}"))
+                # max_files e regra global: aplica apenas na primeira pasta para respeitar o limite
+                limite = max_files_val if idx == 1 else None
+                resultado = organizador.organizar_pasta(
+                    pasta, dry_run=dry_run, no_ai=no_ai, model=modelo, max_files=limite,
+                    logger=logger,
+                    progresso=lambda valor: self.eventos.put(("progresso", valor)),
+                    cancel_event=self.cancelamento,
+                )
+                resultados.append(resultado)
+            self.eventos.put(("estatisticas", (resultados, (datetime.now() - inicio).total_seconds())))
+            self.eventos.put(("fim", "Organizacao concluida."))
         except organizador.OperacaoCancelada:
-            self.eventos.put(("cancelado", "Operação cancelada."))
+            self.eventos.put(("cancelado", "Operacao cancelada."))
         except Exception as erro:
             self.eventos.put(("erro", str(erro)))
 
