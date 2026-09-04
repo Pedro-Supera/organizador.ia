@@ -390,6 +390,12 @@ O projeto foi validado e preparado para publicação no GitHub com:
 - A configuracao usa o interpretador `venv/bin/python` do projeto e nao contem credenciais.
 - A colaboracao entre agentes ocorre pelo workspace compartilhado, pelo estado do Git e por este servidor MCP; cada agente deve validar alteracoes antes de commit e push.
 
+## Workflow cooperativo via MCP
+- O servidor MCP agora oferece mailbox persistente com `publicar_mensagem`, `ler_mensagens` e `marcar_mensagem_lida`.
+- Mensagens ficam em `.mcp_workspace/messages.json`, com escrita atomica e ignorada pelo Git.
+- O Cline deve publicar hand-offs para `copilot`; o Copilot deve responder pelo mesmo mailbox, validar testes e relatar conflitos antes de commit ou push.
+- O protocolo completo está em `WORKFLOW_MCP.md`; o canal é indireto, auditável e não transporta credenciais.
+
 ## Revisao da GUI e progresso real
 - `app.py` teve imports duplicados e estado sem uso removidos.
 - `organizador.py` agora envia progresso absoluto entre `0.0` e `1.0`; a GUI exibe barra e contador no formato `x/y arquivos`.

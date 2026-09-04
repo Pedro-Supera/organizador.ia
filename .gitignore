@@ -57,6 +57,7 @@ temp_*
 *.cache
 __pycache__
 .mypy_cache/
+.mcp_workspace/
 .dmypy.json
 dmypy.json
 .pyre/
