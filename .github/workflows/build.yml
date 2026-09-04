@@ -1,6 +1,8 @@
 name: Gerar Executavel Windows
 
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 jobs:
