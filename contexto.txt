@@ -383,3 +383,9 @@ O projeto foi validado e preparado para publicação no GitHub com:
 - O instalador Inno Setup usa a versao `1.0.0`, nao depende de `app.ico` ausente e remove seus arquivos sem tarefas nao declaradas.
 - A dependencia `mcp==2.1.1` esta declarada em `requirements.txt`.
 - Validacao em 04/09/2026: 33 testes passando, compilacao Python concluida e executavel Linux presente em `dist/OrganizadorInteligente` (38.439.128 bytes). O instalador Windows ainda requer build em ambiente Windows com Inno Setup.
+
+## Integracao com Cline via MCP
+- O Cline esta configurado para consumir o servidor local `mcp_organizador.py` por transporte stdio.
+- Ferramentas disponiveis: `ler_contexto`, `atualizar_contexto` e `listar_arquivos_dist`.
+- A configuracao usa o interpretador `venv/bin/python` do projeto e nao contem credenciais.
+- A colaboracao entre agentes ocorre pelo workspace compartilhado, pelo estado do Git e por este servidor MCP; cada agente deve validar alteracoes antes de commit e push.
