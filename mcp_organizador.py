@@ -34,11 +34,20 @@ def _ler_mensagens() -> list[dict[str, object]]:
 
 
 def _salvar_mensagens(mensagens: list[dict[str, object]]) -> None:
+    """Salva com escrita atômica e deduplica por ID preservando ordem."""
     WORKSPACE_DIR.mkdir(parents=True, exist_ok=True)
+    # Deduplica por ID mantendo a primeira ocorrência
+    vista: set[str] = set()
+    unicos: list[dict[str, object]] = []
+    for m in mensagens:
+        mid = m.get("id")
+        if isinstance(mid, str) and mid and mid not in vista:
+            vista.add(mid)
+            unicos.append(m)
     fd, caminho_temporario = tempfile.mkstemp(dir=WORKSPACE_DIR, prefix="messages-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as arquivo:
-            json.dump(mensagens, arquivo, ensure_ascii=False, indent=2)
+            json.dump(unicos, arquivo, ensure_ascii=False, indent=2)
             arquivo.write("\n")
         os.replace(caminho_temporario, MAILBOX_PATH)
     finally:
@@ -106,13 +115,14 @@ def solicitar_revisao(escopo: str, arquivos: str, criterios: str, comandos: str)
 
 @mcp.tool()
 def ler_mensagens(destinatario: str, apenas_nao_lidas: bool = True) -> str:
-    """Lê mensagens destinadas ao agente informado."""
+    """Lê mensagens destinadas ao agente informado. Ordena por mais recente."""
     mensagens = [
         mensagem
         for mensagem in _ler_mensagens()
         if mensagem.get("destinatario") in {destinatario, "todos"}
         and (not apenas_nao_lidas or not mensagem.get("lida", False))
     ]
+    mensagens.sort(key=lambda m: m.get("criado_em", ""), reverse=True)
     return json.dumps(mensagens, ensure_ascii=False, indent=2)
 
 
