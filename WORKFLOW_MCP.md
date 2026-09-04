@@ -38,6 +38,23 @@ Não inclua chaves, tokens ou conteúdo de `.env`. O mailbox é um canal de coor
 
 O disparo automático do Cline depende do cliente Cline estar ativo e consultar o mailbox. O MCP não consegue iniciar ou conversar diretamente com outro modelo.
 
+## Worker responsivo
+
+Para monitorar continuamente as mensagens destinadas ao Cline:
+
+```bash
+source venv/bin/activate
+python mcp_responder.py --agent cline
+```
+
+Esse modo imprime cada hand-off e não o marca como lido. Para entregar a mensagem a um adaptador local que converse com um cliente, use `--handler`:
+
+```bash
+python mcp_responder.py --agent cline --handler "python meu_adaptador_cline.py"
+```
+
+O adaptador recebe uma mensagem JSON pela entrada padrão. O worker só marca a mensagem como lida quando o comando termina com código `0`; falhas permanecem pendentes para retry. O worker não inicia o modelo Cline diretamente e não deve receber segredos na linha de comando.
+
 ## Exemplo
 
 ```text
