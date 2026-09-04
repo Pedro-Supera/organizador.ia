@@ -389,3 +389,15 @@ O projeto foi validado e preparado para publicação no GitHub com:
 - Ferramentas disponiveis: `ler_contexto`, `atualizar_contexto` e `listar_arquivos_dist`.
 - A configuracao usa o interpretador `venv/bin/python` do projeto e nao contem credenciais.
 - A colaboracao entre agentes ocorre pelo workspace compartilhado, pelo estado do Git e por este servidor MCP; cada agente deve validar alteracoes antes de commit e push.
+
+
+## Orquestração Codex, Cline e Copilot (04/09/2026)
+
+Foi adicionado um orquestrador local e auditável:
+- `ai_orchestrator.py` mantém disponibilidade, fila de tarefas e decisões em `.ai-team-state.json`;
+- `mcp_organizador.py` expõe essas operações ao Cline e ao Codex por MCP/stdio;
+- `docs/ORQUESTRADOR_IA.md` descreve o fluxo de handoff e os limites técnicos.
+
+**Regra de segurança:** o projeto não lê, não tenta adivinhar e não tenta burlar créditos ou tokens de Codex, Cline ou Copilot. Quando um serviço atingir o limite, o agente registra `limited` ou `unavailable`; outro agente disponível continua a tarefa usando o mesmo contexto.
+
+**Fluxo de estudo:** criar tarefa → assumir tarefa → fazer alteração/teste → registrar decisão → concluir tarefa. O MCP sincroniza um resumo do estado no fim deste arquivo para que o próximo agente saiba o que aconteceu.

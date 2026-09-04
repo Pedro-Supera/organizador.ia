@@ -321,3 +321,10 @@ Este projeto está licenciado sob a [MIT License](LICENSE).
 ---
 
 **Desenvolvido com ❤️ em Python 3.11+**
+
+
+## 🤝 Orquestração com Codex, Cline e Copilot
+
+O projeto inclui um MCP local para preservar contexto e coordenar tarefas entre agentes. Ele não compartilha contas, tokens ou créditos: cada plataforma mantém seus próprios limites. Quando um agente estiver limitado, registre o estado e outro agente disponível poderá continuar pelo mesmo workspace.
+
+Veja [docs/ORQUESTRADOR_IA.md](docs/ORQUESTRADOR_IA.md) para o fluxo didático e a configuração.
