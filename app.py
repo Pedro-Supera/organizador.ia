@@ -24,6 +24,10 @@ COR_CARTAO = "#171D26"
 COR_BORDA = "#2B3442"
 COR_TEXTO_SECUNDARIO = "#9BA4B5"
 COR_PRIMARIA = "#3B82F6"
+COR_SUCESSO = "#22C55E"
+COR_ALERTA = "#F59E0B"
+COR_ERRO = "#EF4444"
+COR_INFO = "#38BDF8"
 
 
 def validar_max_files(valor: str) -> int | None:
@@ -64,8 +68,14 @@ class HeaderFrame(ctk.CTkFrame):
 
     def __init__(self, master: ctk.CTkBaseClass) -> None:
         super().__init__(master, fg_color="transparent")
-        ctk.CTkLabel(self, text="Organizador Inteligente", font=ctk.CTkFont(size=30, weight="bold")).pack(anchor="w")
-        ctk.CTkLabel(self, text="Classifique arquivos e gere resumos em poucos cliques.", text_color=COR_TEXTO_SECUNDARIO).pack(anchor="w", pady=(5, 0))
+        wrapper = ctk.CTkFrame(self, fg_color="transparent")
+        wrapper.pack(anchor="w", fill="x")
+        ctk.CTkLabel(wrapper, text="Organizador Inteligente", font=ctk.CTkFont(size=28, weight="bold")).pack(side="left")
+        badge = ctk.CTkLabel(wrapper, text="v1.0.0", font=ctk.CTkFont(size=11),
+                              text_color=COR_TEXTO_SECUNDARIO, fg_color="#1F2937", corner_radius=6)
+        badge.pack(side="left", padx=(10, 0), pady=(2, 0))
+        ctk.CTkLabel(self, text="Classifique arquivos e gere resumos com IA em poucos cliques.",
+                      text_color=COR_TEXTO_SECUNDARIO, font=ctk.CTkFont(size=13)).pack(anchor="w", pady=(4, 0))
 
 
 class DirectorySelectionFrame(ctk.CTkFrame):
@@ -101,7 +111,6 @@ class SettingsFrame(ctk.CTkFrame):
                  ia_var: ctk.BooleanVar, teste_var: ctk.BooleanVar, max_files_var: ctk.StringVar,
                  abrir_chaves: Callable[[], None]) -> None:
         super().__init__(master, fg_color=COR_CARTAO, border_width=1, border_color=COR_BORDA, corner_radius=12)
-        self.controles: list[ctk.CTkBaseClass] = []
         self.grid_columnconfigure(1, weight=1)
         ctk.CTkLabel(self, text="Configurações", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, columnspan=4, padx=16, pady=(14, 8), sticky="w")
         ctk.CTkLabel(self, text="Chave Groq").grid(row=1, column=0, padx=(16, 8), pady=6, sticky="w")
@@ -172,28 +181,41 @@ class ExecutionControlFrame(ctk.CTkFrame):
         super().__init__(master, fg_color=COR_CARTAO, border_width=1, border_color=COR_BORDA, corner_radius=12)
         self.grid_columnconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=0)
-        self.barra = ctk.CTkProgressBar(self, mode="determinate")
+        self.barra = ctk.CTkProgressBar(self, mode="determinate", progress_color=COR_INFO, height=10)
         self.barra.set(0)
-        self.barra.grid(row=0, column=0, columnspan=2, padx=(0, 14), pady=(0, 6), sticky="ew")
-        self.status = ctk.CTkLabel(self, text="0/0 arquivos", text_color=COR_TEXTO_SECUNDARIO, anchor="w")
-        self.status.grid(row=1, column=0, padx=(0, 14), sticky="w")
+        self.barra.grid(row=0, column=0, columnspan=2, padx=14, pady=(14, 6), sticky="ew")
+        self.status = ctk.CTkLabel(self, text="Pronto para iniciar", text_color=COR_TEXTO_SECUNDARIO, anchor="w",
+                                    font=ctk.CTkFont(size=12))
+        self.status.grid(row=1, column=0, padx=14, sticky="w")
         botoes = ctk.CTkFrame(self, fg_color="transparent")
-        botoes.grid(row=1, column=1, sticky="e")
-        self.iniciar = ctk.CTkButton(botoes, text="Iniciar Organização", height=38, fg_color=COR_PRIMARIA, command=iniciar)
+        botoes.grid(row=1, column=1, padx=14, pady=(0, 14), sticky="e")
+        self.iniciar = ctk.CTkButton(botoes, text="Iniciar Organização", height=38,
+                                       fg_color=COR_PRIMARIA, hover_color="#2563EB", command=iniciar)
         self.iniciar.pack(side="left", padx=(0, 8))
-        self.cancelar = ctk.CTkButton(botoes, text="Cancelar", height=38, state="disabled", command=cancelar)
+        self.cancelar = ctk.CTkButton(botoes, text="Cancelar", height=38, state="disabled",
+                                        fg_color=COR_ALERTA, hover_color="#D97706", command=cancelar)
         self.cancelar.pack(side="left")
 
     def atualizar_progresso(self, valor: float, total: int) -> None:
-        """Atualiza a barra e o contador de arquivos processados."""
+        """Atualiza a barra e o contador X/Y de arquivos processados."""
         valor = max(0.0, min(1.0, valor))
         self.barra.set(valor)
         processados = min(total, int(valor * total)) if total else 0
-        self.status.configure(text=f"{processados}/{total} arquivos")
+        self.status.configure(text=f"{processados}/{total} arquivos ({int(valor*100)}%)",
+                              text_color=COR_INFO)
 
-    def atualizar_status(self, texto: str, cor: str = "#9BA4B5") -> None:
+    def atualizar_status(self, texto: str, cor: str = COR_TEXTO_SECUNDARIO) -> None:
         """Atualiza o estado textual da execução."""
         self.status.configure(text=texto, text_color=cor)
+        # Mapeia cor semantica para cor da barra
+        if cor == COR_SUCESSO:
+            self.barra.configure(progress_color=COR_SUCESSO)
+        elif cor == COR_ALERTA:
+            self.barra.configure(progress_color=COR_ALERTA)
+        elif cor == COR_ERRO:
+            self.barra.configure(progress_color=COR_ERRO)
+        else:
+            self.barra.configure(progress_color=COR_INFO)
 
 
 class StatisticsFrame(ctk.CTkFrame):
@@ -316,7 +338,7 @@ class OrganizadorApp(ctk.CTk):
         self._definir_estado_interface("disabled")
         self.controles.cancelar.configure(state="normal")
         self.controles.atualizar_progresso(0.0, self.total_arquivos)
-        self.controles.atualizar_status(f"0/{self.total_arquivos} arquivos", "#4EA1FF")
+        self.controles.atualizar_status(f"0/{self.total_arquivos} arquivos", COR_INFO)
         configuracoes = (self.teste_var.get(), not self.ia_var.get(), self.modelo_var.get(), max_files)
         inicio = datetime.now()
         threading.Thread(target=self._executar, args=(pasta, configuracoes, inicio), daemon=True).start()
@@ -359,11 +381,11 @@ class OrganizadorApp(ctk.CTk):
                     self._definir_estado_interface("normal")
                     self.controles.cancelar.configure(state="disabled")
                     if tipo == "fim":
-                        self.controles.atualizar_status("Concluído", "#6FCF97")
+                        self.controles.atualizar_status("Concluído", COR_SUCESSO)
                     elif tipo == "cancelado":
-                        self.controles.atualizar_status("Cancelado", "#F2C94C")
+                        self.controles.atualizar_status("Cancelado", COR_ALERTA)
                     else:
-                        self.controles.atualizar_status("Erro", "#EB5757")
+                        self.controles.atualizar_status("Erro", COR_ERRO)
                     if tipo == "erro":
                         messagebox.showerror("Erro na organização", valor)
         except queue.Empty:
