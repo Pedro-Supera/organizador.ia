@@ -12,6 +12,7 @@ httpx==0.28.1
 idna==3.19
 iniconfig==2.3.0
 lxml==6.1.2
+mcp==2.1.1
 markdown-it-py==4.2.0
 mdurl==0.1.2
 packaging==26.3

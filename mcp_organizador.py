@@ -1,7 +1,7 @@
 from pathlib import Path
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
-mcp = FastMCP("OrganizadorInteligenteTools")
+mcp = MCPServer("OrganizadorInteligenteTools")
 
 BASE_DIR = Path(__file__).parent.resolve()
 

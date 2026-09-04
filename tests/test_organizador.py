@@ -1,4 +1,5 @@
 import os
+import json
 import sys
 import threading
 from pathlib import Path
@@ -46,6 +47,15 @@ def test_listar_arquivos_elegiveis(tmp_path):
 
     assert [arquivo.name for arquivo in arquivos] == ["Alfa.txt", "zeta.txt"]
     assert [arquivo.name for arquivo in limitados] == ["Alfa.txt"]
+
+
+def test_listar_arquivos_elegiveis_ignora_artefatos_do_projeto(tmp_path):
+    for nome in (".cache_resumos.json", "00_RELATORIO_ORGANIZACAO.md", "mcp_organizador.py", "nota.txt"):
+        (tmp_path / nome).touch()
+
+    arquivos = organizador.listar_arquivos_elegiveis(tmp_path)
+
+    assert [arquivo.name for arquivo in arquivos] == ["nota.txt"]
 
 
 def test_salvar_chave_api_permissoes(tmp_path, monkeypatch):
@@ -203,6 +213,25 @@ def test_organizar_pasta_dry_run_nao_move_arquivos(tmp_path):
 
     assert arquivo.exists()
     assert not (tmp_path / "documentos" / arquivo.name).exists()
+
+
+@patch("organizador.Groq")
+def test_dry_run_com_cache_nao_cria_resumo(mock_groq, tmp_path, monkeypatch):
+    monkeypatch.setenv("GROQ_API_KEY", "chave-de-teste")
+    arquivo = tmp_path / "nota.txt"
+    conteudo = "Texto suficiente para usar o cache local. " * 3
+    arquivo.write_text(conteudo, encoding="utf-8")
+    chave = f"{organizador.calcular_sha256(arquivo)}_{organizador.MODELO_PADRAO}"
+    (tmp_path / ".cache_resumos.json").write_text(
+        json.dumps({chave: "Resumo em cache"}), encoding="utf-8"
+    )
+
+    resultado = organizador.organizar_pasta(tmp_path, dry_run=True)
+
+    assert resultado["cache_hits"] == 1
+    assert resultado["resumos_sucesso"] == 1
+    assert not (tmp_path / "resumos").exists()
+    mock_groq.assert_not_called()
 
 
 def test_destino_incremental(tmp_path):
@@ -381,6 +410,7 @@ def test_importacoes_nao_geram_deprecation_warning():
         warnings.simplefilter("always", DeprecationWarning)
         __import__("organizador")
         __import__("app")
+        assert not capturados
 
 
 def test_caminho_base_suporta_pyinstaller(monkeypatch, tmp_path):

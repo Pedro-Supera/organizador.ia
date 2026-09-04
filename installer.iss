@@ -4,7 +4,7 @@
 
 [Setup]
 AppName=Organizador Inteligente
-AppVersion=1.0
+AppVersion=1.0.0
 AppPublisher=Pedro Supera
 AppPublisherURL=https://github.com/Pedro-Supera/organizador.ia
 AppSupportURL=https://github.com/Pedro-Supera/organizador.ia/issues
@@ -15,7 +15,6 @@ DefaultGroupName=OrganizadorInteligente
 CreateNoIconInProgramGroup=False
 OutputDir=dist
 OutputBaseName=OrganizadorInteligente_Setup
-SetupIconFile=app.ico
 Compression=best
 LZMAUseSolidImage=True
 PrivilegesRequired=user
@@ -39,5 +38,4 @@ Root: HKCU; Subkey: "Software\\OrganizadorInteligente"; ValueName: "Installed"; 
 Filename: "{app}\OrganizadorInteligente.exe"; Description: {cm:LaunchApp,Organizador Inteligente}; Flags: postinstall skipifdoesntexist
 
 [UninstallDelete]
-Type: files; Name: "{app}\*"; Tasks: deletefiles
-Type: dirs; Name: "{app}"; Tasks: deletedir
+Type: filesandordirs; Name: "{app}\*"

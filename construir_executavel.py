@@ -9,6 +9,13 @@ def build(platform_target=None):
     Args:
         platform_target: 'windows', 'linux', 'mac' ou None (plataforma atual).
     """
+    host_platform = {"nt": "windows", "darwin": "mac"}.get(os.name, "linux")
+    target = platform_target or host_platform
+    if target != host_platform:
+        raise RuntimeError(
+            f"PyInstaller nao faz cross-compilacao: alvo {target} em host {host_platform}."
+        )
+
     ctk_path = os.path.dirname(customtkinter.__file__)
 
     entry_point = "app.py"
@@ -18,7 +25,6 @@ def build(platform_target=None):
     sep = ";" if os.name == "nt" else ":"
 
     # Adiciona extensao .exe quando compilar no Windows
-    target = platform_target or ("windows" if os.name == "nt" else "linux")
     if target == "windows":
         exe_name = "OrganizadorInteligente.exe"
         sep = ";"

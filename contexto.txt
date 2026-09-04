@@ -1,5 +1,8 @@
 # Contexto do projeto: Organizador Inteligente
 
+## Servidor MCP (v2.x) — Status Operacional
+O servidor MCP (v2.x) foi configurado com sucesso e está 100% operacional em 04/09/2026. Todas as ferramentas de contexto (`ler_contexto`, `atualizar_contexto`) e distribuição (`listar_arquivos_dist`) estão registradas no servidor e respondendo corretamente.
+
 ## Visão geral
 Este projeto organiza arquivos por categoria e, opcionalmente, gera resumos em português com IA usando a Groq. O núcleo está em `organizador.py`, a interface em `app.py` e os testes em `tests/test_organizador.py`.
 
@@ -22,6 +25,7 @@ O sistema foi pensado para:
   - Movido `sys.setrecursionlimit()` e redirecionamento de `sys.stdout`/`sys.stderr` para dentro do bloco `__main__`, evitando efeitos colaterais durante importação.
 - `tests/test_organizador.py`: testes de regressão e comportamento do sistema.
 - `contexto.txt`: documentação operativa do projeto.
+- `mcp_organizador.py`: servidor MCP 2.x com `MCPServer` e as ferramentas de contexto e distribuição.
 - `.env`: arquivo de configuração local da chave da Groq, quando necessário.
 - `construir_executavel.py`: script de automação para empacotar a aplicação via PyInstaller.
 - `OrganizadorInteligente.spec`: arquivo de configuração gerado pelo PyInstaller (criado após primeira execução do build).
@@ -367,3 +371,15 @@ O projeto foi validado e preparado para publicação no GitHub com:
 - **installer.iss**: Criado na raiz para suporte ao Inno Setup 6, permitindo instalação e desinstalação do Organizador Inteligente no Windows.
 - **build_windows.ps1**: Atualizado com suporte automático ao instalador Inno Setup (se o ISCC.exe estiver disponível).
 - **Status do build**: Mantém 31 testes passando, executable funcional em Linux x86-64 (38.4 MB).
+
+## Release v1.0.0 - Preparacao final (04/09/2026)
+- Revisao do `installer.iss` concluida.
+- Preparacao para o build da v1.0.0 concluida.
+
+## Arquitetura e validacao da Release v1.0.0
+- Arquitetura organizada em camadas: `organizador.py` concentra dominio, cache e relatorios; `app.py` cuida da GUI; `mcp_organizador.py` expoe operacoes de contexto e distribuicao; scripts separados cuidam do empacotamento.
+- O fluxo de organizacao agora ignora cache, relatorios e arquivos internos do projeto, e o modo `dry_run` nao cria nem grava resumos.
+- O build rejeita alvos diferentes da plataforma hospedeira, evitando declarar executaveis cross-platform que o PyInstaller nao produz.
+- O instalador Inno Setup usa a versao `1.0.0`, nao depende de `app.ico` ausente e remove seus arquivos sem tarefas nao declaradas.
+- A dependencia `mcp==2.1.1` esta declarada em `requirements.txt`.
+- Validacao em 04/09/2026: 33 testes passando, compilacao Python concluida e executavel Linux presente em `dist/OrganizadorInteligente` (38.439.128 bytes). O instalador Windows ainda requer build em ambiente Windows com Inno Setup.

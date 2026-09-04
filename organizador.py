@@ -30,7 +30,17 @@ from rich.table import Table
 MODELO_PADRAO = "qwen/qwen3.6-27b"
 MAX_TEXTO_LEITURA = 50_000
 URL_CHAVES_GROQ = "https://console.groq.com/keys"
-ARQUIVOS_INTERNOS = {".env", ".gitignore", "contexto.txt", "organizador.py", "app.py"}
+ARQUIVOS_INTERNOS = {
+    ".env",
+    ".gitignore",
+    ".cache_resumos.json",
+    "00_RELATORIO_ORGANIZACAO.md",
+    "contexto.txt",
+    "mcp_organizador.py",
+    "organizador.py",
+    "app.py",
+    "construir_executavel.py",
+}
 
 CATEGORIAS = {
     "pdfs": [".pdf"],
@@ -557,6 +567,7 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
                 logger.error(f"Falha ao mover {arquivo.name}: {erro}")
     resumos: set[str] = set()
     resumos_falha = 0
+    resumos_sucesso = 0
     cache_hits = 0
     cache_misses = 0
     caracteres_salvos = 0
@@ -571,8 +582,10 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
         chave_cache = f"{sha256}_{model}"
         if chave_cache in cache and isinstance(cache[chave_cache], str):
             resumo = cache[chave_cache]
-            salvar_resumo(pasta_resumos, arquivo.name, resumo)
+            if not dry_run:
+                salvar_resumo(pasta_resumos, arquivo.name, resumo)
             resumos.add(arquivo.name)
+            resumos_sucesso += 1
             cache_hits += 1
             caracteres_salvos += len(texto_sanitizado)
             continue
@@ -610,11 +623,12 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
                         raise OperacaoCancelada
                     arquivo, chave_cache = futuros[futuro]
                     resumo = futuro.result()
-                    if resumo is not None:
+                    if resumo is not None and not resumo.startswith("Erro"):
                         cache[chave_cache] = resumo
                         salvar_cache(cache, caminho_cache)
                         salvar_resumo(pasta_resumos, arquivo.name, resumo)
                         resumos.add(arquivo.name)
+                        resumos_sucesso += 1
                     if resumo is None or resumo.startswith("Erro"):
                         resumos_falha += 1
                     if progresso:
@@ -633,7 +647,7 @@ def organizar_pasta(caminho_pasta: str, dry_run: bool = False, no_ai: bool = Fal
     tempo_estimado_segundos = round((cache_hits * 0.35) + (caracteres_salvos / 5000), 2)
     resultado = {
         "movidos": movidos,
-        "resumos_sucesso": len(resumos) - resumos_falha,
+        "resumos_sucesso": resumos_sucesso,
         "resumos_falha": resumos_falha,
         "por_categoria": dict(contagem),
         "destino": str(pasta),
