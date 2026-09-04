@@ -69,3 +69,7 @@ pip-delete-this-directory.txt
 # Windows
 *.exe
 
+
+# AI team orchestrator (local audit state)
+.ai-team-state.json
+.ai-team-*.tmp
