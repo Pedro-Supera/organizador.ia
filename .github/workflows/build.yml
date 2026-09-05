@@ -3,6 +3,9 @@ name: Gerar Executavel Windows
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   compilar-windows:
     runs-on: windows-latest
@@ -15,21 +18,33 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Instalar dependencias do projeto
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
 
       - name: Executar o script de build
         env:
           PYTHONIOENCODING: "utf-8"
         run: |
-          python construir_executavel.py
+          python construir_executavel.py --windows
+
+      - name: Validar o .exe gerado
+        shell: pwsh
+        run: |
+          $exe = "dist/OrganizadorInteligente.exe"
+          if (-not (Test-Path $exe)) {
+            throw "Executavel nao foi gerado em $exe"
+          }
+          Write-Host "Executavel encontrado: $exe"
+          Get-Item $exe | Select-Object FullName, Length, LastWriteTime
 
       - name: Disponibilizar o .exe para download
         uses: actions/upload-artifact@v4
         with:
           name: OrganizadorInteligente-Windows
           path: dist/OrganizadorInteligente.exe
+          if-no-files-found: error
+          retention-days: 7
