@@ -43,6 +43,65 @@ Aplicação em Python que classifica arquivos por categoria, extrai texto de for
 
 ---
 
+## Arquitetura
+
+O projeto separa a interface da lógica principal para que a mesma funcionalidade possa ser usada pela GUI e pela CLI.
+
+```text
+                    ┌──────────────────────┐
+                    │      app.py (GUI)    │
+                    │     CustomTkinter    │
+                    └──────────┬───────────┘
+                               │
+                               ▼
+┌──────────────┐      ┌──────────────────────┐      ┌─────────────────┐
+│ CLI          │─────▶│    organizador.py    │─────▶│ Groq API / IA   │
+│ organizador  │      │ núcleo da aplicação  │      │ (opcional)      │
+└──────────────┘      └──────────┬───────────┘      └─────────────────┘
+                                  │
+                 ┌────────────────┼────────────────┐
+                 ▼                ▼                ▼
+          Classificação     Extração de texto   Cache local
+                 │                │              SHA-256
+                 └────────────────┼────────────────┘
+                                  ▼
+                         Organização / Relatórios
+
+                 mcp_organizador.py
+                         │
+                         ▼
+                  Integração MCP
+```
+
+### Fluxo principal
+
+1. O usuário escolhe uma pasta pela GUI ou informa um caminho pela CLI.
+2. O núcleo encontra os arquivos elegíveis e classifica cada um por categoria.
+3. O texto é extraído quando o formato é suportado.
+4. Se a IA estiver habilitada, os dados identificáveis são anonimizados localmente antes da chamada externa.
+5. O cache baseado em SHA-256 + modelo evita gerar novamente resumos já processados.
+6. Os arquivos são organizados e os resultados são registrados em relatórios.
+
+A arquitetura atual é intencionalmente simples: `organizador.py` concentra o núcleo, `app.py` cuida da GUI e `mcp_organizador.py` expõe a integração MCP. Refatorações maiores só devem acontecer quando trouxerem ganho real de manutenção, testes ou segurança.
+
+---
+
+## Como a IA é usada
+
+A IA é **opcional** e serve para gerar resumos curtos em português a partir do texto extraído dos documentos.
+
+```text
+Arquivo → extração local → anonimização local → Groq API → resumo → cache local
+```
+
+O aplicativo não precisa de IA para organizar os arquivos. Com `--no-ai`, a organização funciona sem chamadas ao provedor externo.
+
+Para reduzir chamadas repetidas, o projeto mantém um cache local associado ao conteúdo do arquivo por SHA-256 e ao modelo utilizado. A integração também possui streaming e tentativas com backoff para lidar com falhas transitórias.
+
+**Importante:** anonimização baseada em padrões não garante que todos os dados sensíveis sejam removidos. Documentos confidenciais devem ser revisados e, quando necessário, processados com a IA desativada.
+
+---
+
 ## Início rápido
 
 ### 1. Clonar e instalar
@@ -137,14 +196,18 @@ Guia extra: [`COMPILAR_WINDOWS.md`](COMPILAR_WINDOWS.md).
 
 ---
 
-## Testes
+## Testes e CI
+
+Execute localmente:
 
 ```bash
 source venv/bin/activate
 pytest tests/ -q
 ```
 
-Cobertura: classificação, extração, PII, cache, IA, dry-run, cancelamento, pastas principais, mailbox MCP, PyInstaller.
+A suíte cobre classificação, extração, PII, cache, IA, dry-run, cancelamento, pastas principais, mailbox MCP e PyInstaller.
+
+O GitHub Actions executa os testes automaticamente em `push` para `main` e em Pull Requests para `main`. O workflow usa permissões mínimas de leitura do conteúdo do repositório.
 
 ---
 
@@ -162,6 +225,10 @@ Antes de enviar texto à API, o app anonimiza localmente:
 - Chave Groq só em `.env` (no `.gitignore`)
 - Não varre raiz do disco no modo Principais
 - Não apaga arquivos: apenas organiza (move) com dry-run disponível
+- A IA é opcional; `--no-ai` impede o uso do provedor externo
+- A anonimização é uma camada de proteção, não uma garantia absoluta de remoção de PII
+
+Consulte a [política de segurança](SECURITY.md) para boas práticas e relato responsável de vulnerabilidades.
 
 ---
 
@@ -180,7 +247,9 @@ organizador.ia/
 ├── contexto.txt
 ├── requirements.txt
 ├── LICENSE
+├── SECURITY.md
 ├── .github/workflows/build.yml
+├── .github/workflows/tests.yml
 └── tests/
 ```
 
@@ -195,6 +264,24 @@ organizador.ia/
 | `--no-ai` | Sem resumos |
 | `--model` | Modelo Groq |
 | `--max-files` | Limite de arquivos |
+
+---
+
+## Roadmap
+
+- [x] Organização por categorias
+- [x] GUI e CLI
+- [x] Resumos opcionais com IA
+- [x] Anonimização de dados sensíveis
+- [x] Cache local por SHA-256
+- [x] Testes automatizados
+- [x] CI com GitHub Actions
+- [x] Build Windows via GitHub Actions
+- [x] Integração MCP
+- [ ] Release oficial com executável Windows
+- [ ] Melhorar cobertura de testes de segurança
+- [ ] Testar distribuição em mais versões do Windows
+- [ ] Melhorar observabilidade e diagnósticos de falhas
 
 ---
 

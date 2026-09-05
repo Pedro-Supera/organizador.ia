@@ -1,14 +1,13 @@
+import os
 import subprocess
 import sys
-import os
+from pathlib import Path
+
 import customtkinter
 
-def build(platform_target=None):
-    """Compila o executavel para a plataforma alvo.
 
-    Args:
-        platform_target: 'windows', 'linux', 'mac' ou None (plataforma atual).
-    """
+def build(platform_target=None):
+    """Compila o executável para a plataforma alvo usando a plataforma atual."""
     host_platform = {"nt": "windows", "darwin": "mac"}.get(os.name, "linux")
     target = platform_target or host_platform
     if target != host_platform:
@@ -16,22 +15,23 @@ def build(platform_target=None):
             f"PyInstaller nao faz cross-compilacao: alvo {target} em host {host_platform}."
         )
 
-    ctk_path = os.path.dirname(customtkinter.__file__)
-
-    entry_point = "app.py"
-    # PyInstaller adiciona .exe sozinho no Windows; nao coloque .exe no --name
+    ctk_path = Path(customtkinter.__file__).resolve().parent
+    entry_point = Path("app.py")
     exe_name = "OrganizadorInteligente"
-
-    # O separador do --add-data e diferente entre Windows (;) e Linux/Mac (:)
     sep = ";" if os.name == "nt" else ":"
+
+    if not entry_point.is_file():
+        raise FileNotFoundError(f"Arquivo de entrada nao encontrado: {entry_point}")
 
     cmd = [
         "pyinstaller",
         "--noconsole",
         "--onefile",
+        "--clean",
+        "--noconfirm",
         f"--name={exe_name}",
         f"--add-data={ctk_path}{sep}customtkinter",
-        entry_point
+        str(entry_point),
     ]
 
     print(f"[INFO] Compilando para plataforma: {target}")
@@ -39,23 +39,25 @@ def build(platform_target=None):
 
     try:
         subprocess.run(cmd, check=True)
-        saida = f"dist/{exe_name}.exe" if target == "windows" else f"dist/{exe_name}"
+        saida = Path("dist") / (f"{exe_name}.exe" if target == "windows" else exe_name)
+        if not saida.is_file():
+            raise RuntimeError(f"O build terminou, mas o executavel nao foi encontrado: {saida}")
         print(f"[OK] Executavel criado com sucesso: {saida}")
     except subprocess.CalledProcessError as e:
         print(f"[ERRO] Falha ao criar o executavel: {e}")
         sys.exit(1)
     except Exception as e:
-        print(f"Erro inesperado: {e}")
+        print(f"[ERRO] Erro inesperado: {e}")
         sys.exit(1)
 
+
 if __name__ == "__main__":
-    # Suporta argumento opcional: --windows, --linux, --mac
     target = None
     if len(sys.argv) > 1:
         arg = sys.argv[1].lower().lstrip("-")
         if arg in ("windows", "win"):
             target = "windows"
-        elif arg in ("linux",):
+        elif arg == "linux":
             target = "linux"
         elif arg in ("mac", "osx", "darwin"):
             target = "mac"
