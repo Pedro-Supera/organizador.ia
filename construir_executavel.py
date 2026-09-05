@@ -19,14 +19,11 @@ def build(platform_target=None):
     ctk_path = os.path.dirname(customtkinter.__file__)
 
     entry_point = "app.py"
+    # PyInstaller adiciona .exe sozinho no Windows; nao coloque .exe no --name
     exe_name = "OrganizadorInteligente"
 
     # O separador do --add-data e diferente entre Windows (;) e Linux/Mac (:)
     sep = ";" if os.name == "nt" else ":"
-
-    # O PyInstaller adiciona .exe automaticamente no Windows.
-    if target == "windows":
-        sep = ";"
 
     cmd = [
         "pyinstaller",
@@ -42,8 +39,8 @@ def build(platform_target=None):
 
     try:
         subprocess.run(cmd, check=True)
-        extensao = ".exe" if target == "windows" else ""
-        print(f"[OK] Executavel criado com sucesso: dist/{exe_name}{extensao}")
+        saida = f"dist/{exe_name}.exe" if target == "windows" else f"dist/{exe_name}"
+        print(f"[OK] Executavel criado com sucesso: {saida}")
     except subprocess.CalledProcessError as e:
         print(f"[ERRO] Falha ao criar o executavel: {e}")
         sys.exit(1)
@@ -63,4 +60,3 @@ if __name__ == "__main__":
         elif arg in ("mac", "osx", "darwin"):
             target = "mac"
     build(target)
-
