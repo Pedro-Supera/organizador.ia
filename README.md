@@ -233,9 +233,11 @@ organizador.ia/
 - [x] PyInstaller
 - [x] GitHub Actions
 - [x] MCP
-- [ ] Melhorar cobertura e observabilidade
+- [ ] Melhorar cobertura e observabilidade → [#4](https://github.com/Pedro-Supera/organizador.ia/issues/4)
 - [ ] Evoluir integrações MCP com ferramentas adicionais
-- [ ] Melhorar experiência de instalação/distribuição
+- [ ] Melhorar experiência de instalação/distribuição → [#4](https://github.com/Pedro-Supera/organizador.ia/issues/4)
+
+A prioridade da próxima versão é melhorar diagnóstico e distribuição sem transformar o núcleo em uma arquitetura desnecessariamente complexa.
 
 ## Contribuindo
 
