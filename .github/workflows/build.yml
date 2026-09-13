@@ -9,7 +9,7 @@ jobs:
 
     steps:
       - name: Baixar o codigo do repositorio
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Configurar o Python no Windows
         uses: actions/setup-python@v5
