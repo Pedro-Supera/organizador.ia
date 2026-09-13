@@ -29,7 +29,7 @@ jobs:
           python construir_executavel.py
 
       - name: Disponibilizar o .exe para download
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: OrganizadorInteligente-Windows
           path: dist/OrganizadorInteligente.exe
